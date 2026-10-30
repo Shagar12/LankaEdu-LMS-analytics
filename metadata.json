@@ -1,0 +1,8 @@
+{
+  "name": "LankaEdu LMS & Analytics",
+  "description": "Comprehensive School LMS and Academic Analytics Platform tailored for the Sri Lankan school curriculum (Grades 1 to 13, Divisions A/B/C). Features automated Sri Lankan grading (A, B, C, S, W), comparative class analytics, student performance profiles, radar & trend charts, batch mark entry, and CSV export/import.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
