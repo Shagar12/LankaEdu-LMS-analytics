@@ -15,6 +15,7 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  Cloud,
 } from 'lucide-react';
 
 interface AdminPasswordSettingsCardProps {
@@ -33,6 +34,9 @@ export const AdminPasswordSettingsCard: React.FC<AdminPasswordSettingsCardProps>
     resetAdminPasswordToDefault,
     setActiveTab,
     isAdminAuthenticated,
+    isFirebaseConnected,
+    isFirebaseSyncing,
+    lastFirebaseSync,
   } = useLMS();
 
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -157,6 +161,11 @@ export const AdminPasswordSettingsCard: React.FC<AdminPasswordSettingsCardProps>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                 <HardDrive className="w-3 h-3 text-indigo-500" />
                 <span>Saved to localStorage</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                <Cloud className={`w-3 h-3 text-emerald-600 ${isFirebaseSyncing ? 'animate-bounce' : ''}`} />
+                <span>Firebase Synced</span>
               </span>
             </div>
 

@@ -542,6 +542,7 @@ const TeacherModal: React.FC<TeacherModalProps> = ({ teacher, onClose }) => {
   const [email, setEmail] = useState(teacher?.email || '');
   const [phone, setPhone] = useState(teacher?.phone || '');
   const [qualification, setQualification] = useState(teacher?.qualification || '');
+  const [password, setPassword] = useState(teacher?.password || 'teacher123');
 
   // Class teacher assignment
   const [isClassTeacher, setIsClassTeacher] = useState(Boolean(teacher?.isClassTeacherOf));
@@ -553,6 +554,7 @@ const TeacherModal: React.FC<TeacherModalProps> = ({ teacher, onClose }) => {
     if (!fullName.trim()) return;
 
     const classTeacherObj = isClassTeacher ? { grade: classGrade, division: classDivision } : undefined;
+    const finalPassword = password.trim() || 'teacher123';
 
     if (teacher) {
       updateTeacher(teacher.id, {
@@ -560,6 +562,7 @@ const TeacherModal: React.FC<TeacherModalProps> = ({ teacher, onClose }) => {
         email,
         phone,
         qualification,
+        password: finalPassword,
         isClassTeacherOf: classTeacherObj,
       });
     } else {
@@ -568,6 +571,7 @@ const TeacherModal: React.FC<TeacherModalProps> = ({ teacher, onClose }) => {
         email,
         phone,
         qualification,
+        password: finalPassword,
         isClassTeacherOf: classTeacherObj,
         assignments: [],
       });
@@ -641,6 +645,23 @@ const TeacherModal: React.FC<TeacherModalProps> = ({ teacher, onClose }) => {
               onChange={(e) => setQualification(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              Teacher Portal Login Password (min 4 characters)
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. teacher123"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Saves to Firebase Firestore and syncs in real-time across all devices.
+            </p>
           </div>
 
           {/* Class Teacher Allocation */}

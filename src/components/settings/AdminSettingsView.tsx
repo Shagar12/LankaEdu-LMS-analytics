@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLMS } from '../../context/LMSContext';
+import { Teacher } from '../../types/lms';
 import {
   ShieldCheck,
   Key,
@@ -18,6 +19,13 @@ import {
   Check,
   ArrowRight,
   Sparkles,
+  Cloud,
+  Users,
+  Copy,
+  Smartphone,
+  Laptop,
+  Radio,
+  Search,
 } from 'lucide-react';
 
 export const AdminSettingsView: React.FC = () => {
@@ -33,6 +41,11 @@ export const AdminSettingsView: React.FC = () => {
     switchRole,
     currentRole,
     isAdminAuthenticated,
+    isFirebaseConnected,
+    isFirebaseSyncing,
+    lastFirebaseSync,
+    updateTeacherPassword,
+    syncAllCredentialsToFirebase,
   } = useLMS();
 
   // Password form state
@@ -44,6 +57,20 @@ export const AdminSettingsView: React.FC = () => {
   const [showCurrentPwd, setShowCurrentPwd] = useState(false);
   const [showNewPwd, setShowNewPwd] = useState(false);
   const [showConfirmPwd, setShowConfirmPwd] = useState(false);
+
+  // Faculty Password Management State
+  const [teacherSearch, setTeacherSearch] = useState('');
+  const [editingTeacherForPassword, setEditingTeacherForPassword] = useState<Teacher | null>(null);
+  const [teacherNewPwd, setTeacherNewPwd] = useState('');
+  const [teacherConfirmPwd, setTeacherConfirmPwd] = useState('');
+  const [showTeacherNewPwd, setShowTeacherNewPwd] = useState(false);
+  const [revealedTeacherPasswords, setRevealedTeacherPasswords] = useState<Record<string, boolean>>({});
+  const [teacherActionStatus, setTeacherActionStatus] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [copiedTeacherId, setCopiedTeacherId] = useState<string | null>(null);
 
   // Status message
   const [statusMessage, setStatusMessage] = useState<{
@@ -145,6 +172,67 @@ export const AdminSettingsView: React.FC = () => {
     setTimeout(() => setShowDataResetSuccess(false), 4000);
   };
 
+  // Update a teacher's password directly from the Settings menu
+  const handleTeacherPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTeacherForPassword) return;
+    setTeacherActionStatus(null);
+
+    if (teacherNewPwd.length < 4) {
+      setTeacherActionStatus({
+        type: 'error',
+        text: 'Teacher password must be at least 4 characters long.',
+      });
+      return;
+    }
+
+    if (teacherNewPwd !== teacherConfirmPwd) {
+      setTeacherActionStatus({
+        type: 'error',
+        text: 'The confirmation password does not match.',
+      });
+      return;
+    }
+
+    const res = await updateTeacherPassword(editingTeacherForPassword.id, teacherNewPwd);
+    if (res.success) {
+      setTeacherActionStatus({ type: 'success', text: res.message });
+      setTeacherNewPwd('');
+      setTeacherConfirmPwd('');
+      setTimeout(() => {
+        setEditingTeacherForPassword(null);
+        setTeacherActionStatus(null);
+      }, 2500);
+    } else {
+      setTeacherActionStatus({ type: 'error', text: res.message });
+    }
+  };
+
+  const handleToggleRevealTeacherPwd = (teacherId: string) => {
+    setRevealedTeacherPasswords((prev) => ({
+      ...prev,
+      [teacherId]: !prev[teacherId],
+    }));
+  };
+
+  const handleCopyTeacherCredential = (teacher: Teacher) => {
+    const text = `Teacher Portal Login:\nEmployee ID: ${teacher.employeeId}\nPassword: ${teacher.password || 'teacher123'}`;
+    navigator.clipboard.writeText(text);
+    setCopiedTeacherId(teacher.id);
+    setTimeout(() => setCopiedTeacherId(null), 2500);
+  };
+
+  const handleManualSyncAll = async () => {
+    setIsSyncingAll(true);
+    const res = await syncAllCredentialsToFirebase();
+    setIsSyncingAll(false);
+    if (res.success) {
+      setStatusMessage({ type: 'success', text: res.message });
+    } else {
+      setStatusMessage({ type: 'error', text: res.message });
+    }
+  };
+
   if (!isAdminAuthenticated) {
     return (
       <div className="max-w-md mx-auto my-12 p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-center shadow-xs">
@@ -214,17 +302,30 @@ export const AdminSettingsView: React.FC = () => {
         <div className="lg:col-span-7 space-y-6">
           
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
-            <div className="flex items-center gap-2.5 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
-              <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
-                <Key className="w-4 h-4" />
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold shrink-0 mt-0.5">
+                  <Key className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                    In-App Password Management (Master Administrator)
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Update your master admin password directly from this interface. Persisted in browser localStorage and synced to Firebase Firestore across all devices.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                  In-App Password Management (Master Administrator)
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Update your master admin password anytime directly from this interface. Persisted in browser localStorage (<code className="font-mono text-indigo-600 dark:text-indigo-400">lankaedu_admin_password_v1</code>) across sessions and device reboots.
-                </p>
+
+              {/* Firebase Live Cloud Status Badge */}
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 self-start shrink-0">
+                <Cloud className={`w-3.5 h-3.5 text-emerald-600 ${isFirebaseSyncing ? 'animate-bounce' : ''}`} />
+                <span>{isFirebaseSyncing ? 'Syncing with Cloud...' : 'Firebase Firestore Active'}</span>
+                {lastFirebaseSync && (
+                  <span className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70 border-l border-emerald-200 dark:border-emerald-800 pl-1.5 ml-0.5">
+                    {lastFirebaseSync}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -401,6 +502,147 @@ export const AdminSettingsView: React.FC = () => {
               </div>
 
             </form>
+          </div>
+
+          {/* Faculty Credentials & Passwords Management Card (Firebase Firestore Synced) */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-start gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold shrink-0 mt-0.5">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Teacher Credentials & Passwords</span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300">
+                      Cloud Sync
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Manage login passwords for subject teachers. Any password update saved here syncs immediately to Firebase Firestore across all devices.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleManualSyncAll}
+                disabled={isSyncingAll}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors border border-slate-200 dark:border-slate-700 disabled:opacity-50 shrink-0 self-start"
+                title="Sync all faculty credentials with Firebase Firestore"
+              >
+                <Cloud className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${isSyncingAll ? 'animate-spin' : ''}`} />
+                <span>{isSyncingAll ? 'Syncing...' : 'Sync All to Cloud'}</span>
+              </button>
+            </div>
+
+            {/* Quick Filter Search */}
+            <div className="relative mb-4">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search teachers by name or employee ID (e.g. EMP-4001)..."
+                value={teacherSearch}
+                onChange={(e) => setTeacherSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Teacher Credential Cards */}
+            <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+              {teachers
+                .filter(
+                  (t) =>
+                    t.fullName.toLowerCase().includes(teacherSearch.toLowerCase()) ||
+                    t.employeeId.toLowerCase().includes(teacherSearch.toLowerCase()) ||
+                    t.qualification.toLowerCase().includes(teacherSearch.toLowerCase())
+                )
+                .map((teacher) => {
+                  const isRevealed = Boolean(revealedTeacherPasswords[teacher.id]);
+                  const pwd = teacher.password || 'teacher123';
+                  const isCopied = copiedTeacherId === teacher.id;
+
+                  return (
+                    <div
+                      key={teacher.id}
+                      className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                            {teacher.fullName}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold">
+                            {teacher.employeeId}
+                          </span>
+                          {teacher.isClassTeacherOf && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-medium">
+                              Grade {teacher.isClassTeacherOf.grade}-{teacher.isClassTeacherOf.division}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {teacher.assignments.length > 0
+                            ? teacher.assignments
+                                .map((a) => {
+                                  const sub = subjects.find((s) => s.id === a.subjectId);
+                                  return `${sub?.shortName || sub?.name || 'Subject'} (Gr.${a.grade})`;
+                                })
+                                .join(', ')
+                            : 'No active assignments'}
+                        </p>
+                      </div>
+
+                      {/* Password and Actions */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1">
+                          <span className="text-slate-400 text-[10px] mr-1.5 font-medium">Password:</span>
+                          <span className="font-mono text-xs font-semibold text-slate-800 dark:text-slate-200 min-w-[70px]">
+                            {isRevealed ? pwd : '••••••••'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleRevealTeacherPwd(teacher.id)}
+                            className="ml-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                            title={isRevealed ? 'Hide password' : 'Show password'}
+                          >
+                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyTeacherCredential(teacher)}
+                            className="ml-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5"
+                            title="Copy teacher login credentials"
+                          >
+                            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingTeacherForPassword(teacher);
+                            setTeacherNewPwd('');
+                            setTeacherConfirmPwd('');
+                            setTeacherActionStatus(null);
+                          }}
+                          className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-900/80 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1"
+                        >
+                          <Key className="w-3 h-3" />
+                          <span>Change</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="mt-4 p-2.5 rounded-lg bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2 text-[11px] text-indigo-900 dark:text-indigo-200">
+              <Radio className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0 animate-pulse" />
+              <span>
+                <strong>Multi-Device Security:</strong> Passwords changed here are immediately broadcast via Firestore real-time listeners to all devices. The teacher must supply the new password on their next sign-in.
+              </span>
+            </div>
           </div>
 
           {/* System Data Maintenance */}
@@ -620,6 +862,113 @@ export const AdminSettingsView: React.FC = () => {
                 Yes, Reset All Data
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Change Teacher Password */}
+      {editingTeacherForPassword && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-2.5 pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
+                <Key className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Update Teacher Password
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {editingTeacherForPassword.fullName} ({editingTeacherForPassword.employeeId})
+                </p>
+              </div>
+            </div>
+
+            {teacherActionStatus && (
+              <div
+                className={`mb-4 p-3 rounded-lg text-xs flex items-center gap-2 border ${
+                  teacherActionStatus.type === 'success'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+                }`}
+              >
+                {teacherActionStatus.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                )}
+                <span>{teacherActionStatus.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleTeacherPasswordSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  New Password <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type={showTeacherNewPwd ? 'text' : 'password'}
+                    required
+                    placeholder="Enter new password (min 4 characters)..."
+                    value={teacherNewPwd}
+                    onChange={(e) => setTeacherNewPwd(e.target.value)}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pr-10 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTeacherNewPwd(!showTeacherNewPwd)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showTeacherNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Confirm New Password <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type={showTeacherNewPwd ? 'text' : 'password'}
+                  required
+                  placeholder="Re-enter new password..."
+                  value={teacherConfirmPwd}
+                  onChange={(e) => setTeacherConfirmPwd(e.target.value)}
+                  className={`w-full bg-slate-50 dark:bg-slate-800 border rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 font-mono ${
+                    teacherConfirmPwd && teacherNewPwd !== teacherConfirmPwd
+                      ? 'border-red-400 focus:ring-red-500'
+                      : 'border-slate-200 dark:border-slate-700 focus:ring-blue-500'
+                  }`}
+                />
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 text-[11px] text-slate-500 flex items-center gap-1.5">
+                <Cloud className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span>Saves directly to Firebase Firestore with instant cross-device synchronization.</span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTeacherForPassword(null);
+                    setTeacherActionStatus(null);
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!teacherNewPwd || teacherNewPwd !== teacherConfirmPwd || isFirebaseSyncing}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{isFirebaseSyncing ? 'Saving to Cloud...' : 'Save & Sync Password'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LankaEdu LMS Firestore Database Blueprint",
+  "description": "Firestore schema and access control specifications for LankaEdu LMS Sri Lankan School Management System",
+  "entities": {
+    "system_settings": {
+      "description": "Global system configurations including Master Administrator credentials",
+      "path": "system_settings/{settingId}",
+      "documents": {
+        "admin_auth": {
+          "description": "Master Administrator authentication and security settings",
+          "fields": {
+            "masterPassword": {
+              "type": "string",
+              "description": "Master password for administrator full-access portal",
+              "minLength": 5,
+              "maxLength": 100
+            },
+            "updatedAt": {
+              "type": "string",
+              "description": "ISO timestamp of last password update"
+            },
+            "updatedBy": {
+              "type": "string",
+              "description": "Identifier of the actor who updated the password"
+            },
+            "isCustomSet": {
+              "type": "boolean",
+              "description": "Flag indicating if default admin password has been customized"
+            }
+          },
+          "required": ["masterPassword", "updatedAt"]
+        }
+      }
+    },
+    "teachers": {
+      "description": "Faculty members, employee credentials, subject assignments, and grade authorizations",
+      "path": "teachers/{teacherId}",
+      "fields": {
+        "id": {
+          "type": "string",
+          "description": "Unique system teacher ID (e.g. tch_01)"
+        },
+        "employeeId": {
+          "type": "string",
+          "description": "Sri Lankan Ministry/School Employee ID (e.g. EMP-4001)"
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full legal name of the faculty member",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "email": {
+          "type": "string",
+          "description": "Official school contact email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Teacher contact phone number"
+        },
+        "qualification": {
+          "type": "string",
+          "description": "Academic and pedagogical qualifications (e.g. B.Sc, PGDE)"
+        },
+        "password": {
+          "type": "string",
+          "description": "Portal login password for teacher subject marks entry",
+          "minLength": 4,
+          "maxLength": 100
+        },
+        "isClassTeacherOf": {
+          "type": "object",
+          "description": "Assigned class teacher grade and division if applicable",
+          "properties": {
+            "grade": { "type": "number", "minimum": 1, "maximum": 13 },
+            "division": { "type": "string", "enum": ["A", "B", "C"] }
+          }
+        },
+        "assignments": {
+          "type": "array",
+          "description": "List of subject and grade assignments authorized for this teacher"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last record modification"
+        }
+      },
+      "required": ["id", "employeeId", "fullName", "password", "updatedAt"]
+    }
+  }
+}

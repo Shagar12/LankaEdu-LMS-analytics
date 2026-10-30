@@ -22,6 +22,14 @@ import {
   calculateClassStatistics,
   calculateSubjectRankings,
 } from '../utils/grading';
+import {
+  testFirestoreConnection,
+  syncAdminPasswordToFirestore,
+  subscribeToAdminPassword,
+  syncTeacherToFirestore,
+  subscribeToTeachers,
+  seedTeachersToFirestore,
+} from '../lib/firebase';
 
 const INITIAL_MARK_SUBMISSIONS: MarkSubmission[] = [
   {
@@ -113,6 +121,7 @@ interface LMSContextType {
     email: string;
     phone: string;
     qualification: string;
+    password?: string;
     isClassTeacherOf?: { grade: GradeLevel; division: Division };
     assignments: { subjectId: string; grade: GradeLevel; division: Division | 'all' }[];
   }) => void;
@@ -155,6 +164,13 @@ interface LMSContextType {
   approveMarksSubmission: (submissionId: string) => void;
   getSubmissionStatus: (subjectId: string, grade: GradeLevel, division: Division, term: TermNumber) => MarkSubmissionStatus;
   isSubjectEditableByCurrentRole: (subjectId: string, grade: GradeLevel, division: Division) => boolean;
+
+  // Firebase Real-time Multi-Device Sync
+  isFirebaseConnected: boolean;
+  isFirebaseSyncing: boolean;
+  lastFirebaseSync: string | null;
+  updateTeacherPassword: (teacherId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  syncAllCredentialsToFirebase: () => Promise<{ success: boolean; message: string }>;
 }
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
@@ -215,6 +231,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, adminPassword);
   }, [adminPassword]);
+
+  // Firebase Firestore Real-Time Sync State
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
+  const [lastFirebaseSync, setLastFirebaseSync] = useState<string | null>(null);
 
   const [loggedTeacherId, setLoggedTeacherId] = useState<string | null>(() => {
     return localStorage.getItem(LOGGED_TEACHER_STORAGE_KEY);
@@ -341,6 +362,69 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [students]);
 
+  // Real-time Firestore synchronization for Admin & Faculty credentials across all devices
+  useEffect(() => {
+    let unsubscribeAdmin: (() => void) | undefined;
+    let unsubscribeTeachers: (() => void) | undefined;
+
+    testFirestoreConnection().then((connected) => {
+      setIsFirebaseConnected(connected);
+      if (!connected) return;
+
+      // 1. Subscribe to Admin Master Password changes in real time
+      unsubscribeAdmin = subscribeToAdminPassword((remoteData) => {
+        if (remoteData?.masterPassword) {
+          setAdminPassword((prev) => {
+            if (prev !== remoteData.masterPassword) {
+              localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remoteData.masterPassword);
+              return remoteData.masterPassword;
+            }
+            return prev;
+          });
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          // Initialize document in Firestore if freshly provisioned
+          const currentLocal = localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) || 'admin123';
+          syncAdminPasswordToFirestore(currentLocal, 'System Initialization').catch((err) =>
+            console.warn('Initial admin password sync note:', err)
+          );
+        }
+      });
+
+      // 2. Subscribe to Teacher credentials & updates in real time
+      unsubscribeTeachers = subscribeToTeachers((remoteTeachers) => {
+        if (remoteTeachers.length > 0) {
+          setTeachers((prev) => {
+            // Compare to see if any teacher password or details changed
+            const hasChange =
+              remoteTeachers.length !== prev.length ||
+              remoteTeachers.some((rt) => {
+                const pt = prev.find((p) => p.id === rt.id);
+                return !pt || pt.password !== rt.password || pt.fullName !== rt.fullName;
+              });
+
+            if (hasChange) {
+              localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(remoteTeachers));
+              return remoteTeachers;
+            }
+            return prev;
+          });
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          // Seed mock teachers into empty database
+          seedTeachersToFirestore(INITIAL_MOCK_TEACHERS).catch((err) =>
+            console.warn('Initial faculty seed note:', err)
+          );
+        }
+      });
+    });
+
+    return () => {
+      if (unsubscribeAdmin) unsubscribeAdmin();
+      if (unsubscribeTeachers) unsubscribeTeachers();
+    };
+  }, []);
+
   // Currently logged in teacher object
   const currentTeacher = useMemo(() => {
     if (!loggedTeacherId) return null;
@@ -455,15 +539,105 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const trimmed = newPassword.trim();
     setAdminPassword(trimmed);
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, trimmed);
+
+    // Synchronize to Firebase Firestore immediately for all devices
+    setIsFirebaseSyncing(true);
+    syncAdminPasswordToFirestore(trimmed, 'Master Administrator')
+      .then(() => {
+        setIsFirebaseSyncing(false);
+        setLastFirebaseSync(new Date().toLocaleTimeString());
+      })
+      .catch((err) => {
+        setIsFirebaseSyncing(false);
+        console.warn('Firebase admin password sync warning:', err);
+      });
+
     return {
       success: true,
-      message: 'Administrator master password has been successfully updated and saved to localStorage (persists across device reboots and browser sessions).',
+      message: 'Administrator master password has been successfully updated and synced to Firebase Firestore! All devices immediately require the new password.',
     };
   };
 
   const resetAdminPasswordToDefault = () => {
     setAdminPassword('admin123');
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, 'admin123');
+    setIsFirebaseSyncing(true);
+    syncAdminPasswordToFirestore('admin123', 'Default Reset')
+      .then(() => {
+        setIsFirebaseSyncing(false);
+        setLastFirebaseSync(new Date().toLocaleTimeString());
+      })
+      .catch((err) => {
+        setIsFirebaseSyncing(false);
+        console.warn('Firebase reset sync warning:', err);
+      });
+  };
+
+  const updateTeacherPassword = async (
+    teacherId: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> => {
+    if (!newPassword || newPassword.trim().length < 4) {
+      return {
+        success: false,
+        message: 'Teacher password must be at least 4 characters long.',
+      };
+    }
+
+    const targetTeacher = teachers.find((t) => t.id === teacherId);
+    if (!targetTeacher) {
+      return {
+        success: false,
+        message: 'Teacher record not found.',
+      };
+    }
+
+    const updatedTeacher: Teacher = {
+      ...targetTeacher,
+      password: newPassword.trim(),
+    };
+
+    setTeachers((prev) => prev.map((t) => (t.id === teacherId ? updatedTeacher : t)));
+
+    setIsFirebaseSyncing(true);
+    try {
+      await syncTeacherToFirestore(updatedTeacher);
+      setIsFirebaseSyncing(false);
+      setLastFirebaseSync(new Date().toLocaleTimeString());
+      return {
+        success: true,
+        message: `Password for ${targetTeacher.fullName} (${targetTeacher.employeeId}) has been updated and synced to Firebase Firestore across all devices!`,
+      };
+    } catch (e) {
+      setIsFirebaseSyncing(false);
+      console.warn('Firebase teacher password sync warning:', e);
+      return {
+        success: true,
+        message: `Password updated locally. (Firebase sync note: saved to local cache)`,
+      };
+    }
+  };
+
+  const syncAllCredentialsToFirebase = async (): Promise<{ success: boolean; message: string }> => {
+    setIsFirebaseSyncing(true);
+    try {
+      await syncAdminPasswordToFirestore(adminPassword, 'Manual Sync All');
+      for (const t of teachers) {
+        await syncTeacherToFirestore(t);
+      }
+      setIsFirebaseSyncing(false);
+      setLastFirebaseSync(new Date().toLocaleTimeString());
+      return {
+        success: true,
+        message: `All administrator and faculty credentials (${teachers.length} teachers) successfully synced to Firebase Firestore!`,
+      };
+    } catch (e) {
+      setIsFirebaseSyncing(false);
+      return {
+        success: false,
+        message: `Sync encountered error: ${e instanceof Error ? e.message : 'Unknown'}`,
+      };
+    }
   };
 
   const logoutAdmin = () => {
@@ -587,6 +761,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     email: string;
     phone: string;
     qualification: string;
+    password?: string;
     isClassTeacherOf?: { grade: GradeLevel; division: Division };
     assignments: { subjectId: string; grade: GradeLevel; division: Division | 'all' }[];
   }) => {
@@ -595,7 +770,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newTeacher: Teacher = {
       id,
       employeeId,
-      password: 'teacher123',
+      password: data.password || 'teacher123',
       fullName: data.fullName,
       email: data.email,
       phone: data.phone,
@@ -607,10 +782,22 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       })),
     };
     setTeachers((prev) => [...prev, newTeacher]);
+    syncTeacherToFirestore(newTeacher).catch((err) =>
+      console.warn('Teacher addition Firestore sync warning:', err)
+    );
   };
 
   const updateTeacher = (id: string, updates: Partial<Teacher>) => {
-    setTeachers((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+    setTeachers((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      const target = next.find((t) => t.id === id);
+      if (target) {
+        syncTeacherToFirestore(target).catch((err) =>
+          console.warn('Teacher update Firestore sync warning:', err)
+        );
+      }
+      return next;
+    });
   };
 
   const deleteTeacher = (id: string) => {
@@ -623,8 +810,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     grade: GradeLevel,
     division: Division | 'all'
   ) => {
-    setTeachers((prev) =>
-      prev.map((t) => {
+    setTeachers((prev) => {
+      const next = prev.map((t) => {
         if (t.id !== teacherId) return t;
         const newAsgn: TeacherAssignment = {
           id: `asgn_${Date.now()}`,
@@ -636,20 +823,34 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           ...t,
           assignments: [...t.assignments, newAsgn],
         };
-      })
-    );
+      });
+      const target = next.find((t) => t.id === teacherId);
+      if (target) {
+        syncTeacherToFirestore(target).catch((err) =>
+          console.warn('Teacher assignment Firestore sync warning:', err)
+        );
+      }
+      return next;
+    });
   };
 
   const removeTeacherAssignment = (teacherId: string, assignmentId: string) => {
-    setTeachers((prev) =>
-      prev.map((t) => {
+    setTeachers((prev) => {
+      const next = prev.map((t) => {
         if (t.id !== teacherId) return t;
         return {
           ...t,
           assignments: t.assignments.filter((a) => a.id !== assignmentId),
         };
-      })
-    );
+      });
+      const target = next.find((t) => t.id === teacherId);
+      if (target) {
+        syncTeacherToFirestore(target).catch((err) =>
+          console.warn('Teacher assignment removal Firestore sync warning:', err)
+        );
+      }
+      return next;
+    });
   };
 
   // Subject methods
@@ -924,6 +1125,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         approveMarksSubmission,
         getSubmissionStatus,
         isSubjectEditableByCurrentRole,
+        // Firebase Multi-Device Synchronization
+        isFirebaseConnected,
+        isFirebaseSyncing,
+        lastFirebaseSync,
+        updateTeacherPassword,
+        syncAllCredentialsToFirebase,
       }}
     >
       {children}

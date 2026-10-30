@@ -1,0 +1,62 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Validation helper for Admin Authentication doc
+    function isValidAdminAuthDoc(data) {
+      return data.keys().hasOnly(['masterPassword', 'updatedAt', 'updatedBy', 'isCustomSet'])
+        && data.masterPassword is string
+        && data.masterPassword.size() >= 5
+        && data.masterPassword.size() <= 100
+        && data.updatedAt is string
+        && (!('updatedBy' in data) || data.updatedBy is string)
+        && (!('isCustomSet' in data) || data.isCustomSet is bool);
+    }
+
+    // Validation helper for Teacher document and credentials
+    function isValidTeacherDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'employeeId', 'fullName', 'email', 'phone', 
+          'qualification', 'password', 'isClassTeacherOf', 'assignments', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.employeeId is string
+        && data.employeeId.size() >= 1
+        && data.fullName is string
+        && data.fullName.size() >= 2
+        && data.fullName.size() <= 120
+        && data.password is string
+        && data.password.size() >= 4
+        && data.password.size() <= 100
+        && data.updatedAt is string
+        && (!('email' in data) || data.email is string)
+        && (!('phone' in data) || data.phone is string)
+        && (!('qualification' in data) || data.qualification is string)
+        && (!('isClassTeacherOf' in data) || data.isClassTeacherOf == null || data.isClassTeacherOf is map)
+        && (!('assignments' in data) || data.assignments is list);
+    }
+
+    // System Settings collection (Admin master credentials)
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if settingId == 'admin_auth' 
+        && isValidAdminAuthDoc(request.resource.data);
+    }
+
+    // Teachers collection (Faculty credentials & assignments)
+    match /teachers/{teacherId} {
+      allow read: if true;
+      allow create: if isValidTeacherDoc(request.resource.data)
+        && request.resource.data.id == teacherId;
+      allow update: if isValidTeacherDoc(request.resource.data)
+        && request.resource.data.id == resource.data.id;
+      allow delete: if true;
+    }
+
+    // Default deny for all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
