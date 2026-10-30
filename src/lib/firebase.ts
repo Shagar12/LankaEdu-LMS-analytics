@@ -72,9 +72,9 @@ export function handleFirestoreError(
  * Connection test on boot to verify Firestore server connectivity
  */
 export async function testFirestoreConnection(): Promise<boolean> {
-  const path = 'system_settings/admin_auth';
+  const path = 'settings/admin_config';
   try {
-    const testDoc = doc(db, 'system_settings', 'admin_auth');
+    const testDoc = doc(db, 'settings', 'admin_config');
     await getDocFromServer(testDoc);
     return true;
   } catch (error) {
@@ -87,59 +87,85 @@ export async function testFirestoreConnection(): Promise<boolean> {
   }
 }
 
-export interface AdminAuthData {
-  masterPassword: string;
+export interface AdminConfigData {
+  password: string;
+  masterPassword?: string;
+  passwordHash?: string;
   updatedAt: string;
   updatedBy?: string;
   isCustomSet?: boolean;
 }
 
+export type AdminAuthData = AdminConfigData;
+
 /**
- * Saves Admin Master Password to Firestore
+ * Saves Admin Master Password to Firestore (settings/admin_config)
  */
 export async function syncAdminPasswordToFirestore(
   newPassword: string,
-  updatedBy: string = 'Administrator'
+  updatedBy: string = 'Administrator',
+  passwordHash?: string
 ): Promise<void> {
-  const path = 'system_settings/admin_auth';
+  const path = 'settings/admin_config';
   try {
-    const adminDocRef = doc(db, 'system_settings', 'admin_auth');
-    await setDoc(adminDocRef, {
+    const configDocRef = doc(db, 'settings', 'admin_config');
+    const payload: AdminConfigData = {
+      password: newPassword,
       masterPassword: newPassword,
+      passwordHash: passwordHash || '',
       updatedAt: new Date().toISOString(),
       updatedBy,
       isCustomSet: newPassword !== 'admin123',
-    });
+    };
+    await setDoc(configDocRef, payload, { merge: true });
+
+    // Also sync to legacy document for backward compatibility
+    const legacyDocRef = doc(db, 'system_settings', 'admin_auth');
+    await setDoc(legacyDocRef, payload, { merge: true }).catch(() => {});
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
 /**
- * Subscribes to real-time Admin Password changes across all connected devices
+ * Subscribes to real-time Admin Password verification via settings/admin_config
  */
-export function subscribeToAdminPassword(
-  onUpdate: (data: AdminAuthData | null) => void,
+export function subscribeToAdminConfig(
+  onUpdate: (data: AdminConfigData | null) => void,
   onError?: (error: unknown) => void
 ): Unsubscribe {
-  const path = 'system_settings/admin_auth';
-  const adminDocRef = doc(db, 'system_settings', 'admin_auth');
+  const path = 'settings/admin_config';
+  const configDocRef = doc(db, 'settings', 'admin_config');
 
   return onSnapshot(
-    adminDocRef,
+    configDocRef,
     (snapshot) => {
       if (snapshot.exists()) {
-        onUpdate(snapshot.data() as AdminAuthData);
+        const raw = snapshot.data();
+        const data: AdminConfigData = {
+          password: raw.password || raw.masterPassword || 'admin123',
+          masterPassword: raw.masterPassword || raw.password || 'admin123',
+          passwordHash: raw.passwordHash || '',
+          updatedAt: raw.updatedAt || new Date().toISOString(),
+          updatedBy: raw.updatedBy || 'Administrator',
+          isCustomSet: typeof raw.isCustomSet === 'boolean' ? raw.isCustomSet : raw.password !== 'admin123',
+        };
+        onUpdate(data);
       } else {
         onUpdate(null);
       }
     },
     (error) => {
-      console.warn('Admin password listener error:', error);
+      console.warn('Admin config listener error:', error);
       if (onError) onError(error);
     }
   );
 }
+
+/**
+ * Alias for backward compatibility
+ */
+export const subscribeToAdminPassword = subscribeToAdminConfig;
 
 /**
  * Saves a single teacher's data & password to Firestore

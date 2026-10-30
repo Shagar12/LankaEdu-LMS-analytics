@@ -2,12 +2,28 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Validation helper for Admin Config doc in settings collection
+    function isValidAdminConfigDoc(data) {
+      return data.keys().hasOnly(['password', 'masterPassword', 'passwordHash', 'updatedAt', 'updatedBy', 'isCustomSet'])
+        && (
+          ('password' in data && data.password is string && data.password.size() >= 4 && data.password.size() <= 100) ||
+          ('masterPassword' in data && data.masterPassword is string && data.masterPassword.size() >= 4 && data.masterPassword.size() <= 100)
+        )
+        && data.updatedAt is string
+        && (!('password' in data) || (data.password is string && data.password.size() <= 100))
+        && (!('masterPassword' in data) || (data.masterPassword is string && data.masterPassword.size() <= 100))
+        && (!('passwordHash' in data) || (data.passwordHash is string && data.passwordHash.size() <= 200))
+        && (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 100))
+        && (!('isCustomSet' in data) || data.isCustomSet is bool);
+    }
+
     // Validation helper for Admin Authentication doc
     function isValidAdminAuthDoc(data) {
-      return data.keys().hasOnly(['masterPassword', 'updatedAt', 'updatedBy', 'isCustomSet'])
-        && data.masterPassword is string
-        && data.masterPassword.size() >= 5
-        && data.masterPassword.size() <= 100
+      return data.keys().hasOnly(['masterPassword', 'password', 'passwordHash', 'updatedAt', 'updatedBy', 'isCustomSet'])
+        && (
+          ('masterPassword' in data && data.masterPassword is string && data.masterPassword.size() >= 4 && data.masterPassword.size() <= 100) ||
+          ('password' in data && data.password is string && data.password.size() >= 4 && data.password.size() <= 100)
+        )
         && data.updatedAt is string
         && (!('updatedBy' in data) || data.updatedBy is string)
         && (!('isCustomSet' in data) || data.isCustomSet is bool);
@@ -37,11 +53,18 @@ service cloud.firestore {
         && (!('assignments' in data) || data.assignments is list);
     }
 
+    // Settings collection (Admin config settings document: settings/admin_config)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if settingId == 'admin_config' 
+        && isValidAdminConfigDoc(request.resource.data);
+    }
+
     // System Settings collection (Admin master credentials)
     match /system_settings/{settingId} {
       allow read: if true;
-      allow write: if settingId == 'admin_auth' 
-        && isValidAdminAuthDoc(request.resource.data);
+      allow write: if (settingId == 'admin_auth' || settingId == 'admin_config') 
+        && (isValidAdminAuthDoc(request.resource.data) || isValidAdminConfigDoc(request.resource.data));
     }
 
     // Teachers collection (Faculty credentials & assignments)

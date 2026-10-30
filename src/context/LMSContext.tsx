@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import {
   GradeLevel,
   Division,
@@ -25,11 +25,18 @@ import {
 import {
   testFirestoreConnection,
   syncAdminPasswordToFirestore,
+  subscribeToAdminConfig,
   subscribeToAdminPassword,
   syncTeacherToFirestore,
   subscribeToTeachers,
   seedTeachersToFirestore,
+  AdminConfigData,
 } from '../lib/firebase';
+import {
+  computeSha256Hash,
+  computeSyncHash,
+  isMobileDevice,
+} from '../utils/authHash';
 
 const INITIAL_MARK_SUBMISSIONS: MarkSubmission[] = [
   {
@@ -146,7 +153,13 @@ interface LMSContextType {
 
   // 3-Tier RBAC State & Operations
   currentRole: UserRole;
+  isAdmin: boolean;
   isAdminAuthenticated: boolean;
+  isAdminRemembered: boolean;
+  activeSessionAuthHash: string | null;
+  adminNotification: string | null;
+  clearAdminNotification: () => void;
+  isCurrentDeviceMobile: boolean;
   adminPassword: string;
   isCustomPasswordSet: boolean;
   changeAdminPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
@@ -155,7 +168,7 @@ interface LMSContextType {
   markSubmissions: MarkSubmission[];
   instantSaveMode: boolean;
   setInstantSaveMode: (mode: boolean) => void;
-  loginAdmin: (password: string) => boolean;
+  loginAdmin: (password: string, rememberMe?: boolean) => boolean;
   logoutAdmin: () => void;
   loginTeacher: (employeeId: string, password: string) => { success: boolean; message: string; teacher?: Teacher };
   logoutTeacher: () => void;
@@ -181,6 +194,8 @@ const SUBJECTS_STORAGE_KEY = 'lankaedu_subjects_v1';
 const SUBMISSIONS_STORAGE_KEY = 'lankaedu_mark_submissions_v1';
 const ROLE_STORAGE_KEY = 'lankaedu_current_role_v1';
 const ADMIN_AUTH_STORAGE_KEY = 'lankaedu_admin_auth_v1';
+const ADMIN_AUTH_HASH_KEY = 'lankaedu_admin_auth_hash_v1';
+const ADMIN_REMEMBER_ME_KEY = 'lankaedu_admin_remember_me_v1';
 const LOGGED_TEACHER_STORAGE_KEY = 'lankaedu_logged_teacher_id_v1';
 const THEME_KEY = 'lankaedu_theme_v1';
 
@@ -207,19 +222,63 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
+  // Mobile device detection
+  const isCurrentDeviceMobile = useMemo(() => isMobileDevice(), []);
+
   // RBAC State
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem(ROLE_STORAGE_KEY);
     if (saved === 'admin' || saved === 'teacher' || saved === 'parent') {
       return saved;
     }
-    return 'admin'; // default to admin for initial build convenience
+    return 'admin'; // default role view
   });
 
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    const saved = localStorage.getItem(ADMIN_AUTH_STORAGE_KEY);
-    return saved === 'true';
+  // Remember Me state
+  const [isAdminRemembered, setIsAdminRemembered] = useState<boolean>(() => {
+    return localStorage.getItem(ADMIN_REMEMBER_ME_KEY) === 'true';
   });
+
+  // Admin authentication state:
+  // Session Expiry: Do not keep Admin sessions logged in indefinitely on mobile devices unless explicitly checked ('Remember Me').
+  // Default to expiring the Admin session when the browser tab or app is closed.
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
+    const isRemembered = localStorage.getItem(ADMIN_REMEMBER_ME_KEY) === 'true';
+    const sessionAuth = sessionStorage.getItem(ADMIN_AUTH_STORAGE_KEY) === 'true';
+    const localAuth = localStorage.getItem(ADMIN_AUTH_STORAGE_KEY) === 'true';
+
+    if (isRemembered) {
+      return localAuth || sessionAuth;
+    }
+
+    // Default: expires when the tab or app is closed
+    if (localAuth) {
+      localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+    }
+    return sessionAuth;
+  });
+
+  // Active Session's Authentication Hash
+  const [activeSessionAuthHash, setActiveSessionAuthHash] = useState<string | null>(() => {
+    const isRemembered = localStorage.getItem(ADMIN_REMEMBER_ME_KEY) === 'true';
+    if (isRemembered) {
+      return localStorage.getItem(ADMIN_AUTH_HASH_KEY) || sessionStorage.getItem(ADMIN_AUTH_HASH_KEY);
+    }
+    return sessionStorage.getItem(ADMIN_AUTH_HASH_KEY);
+  });
+
+  // Notification for remote auto-logout
+  const [adminNotification, setAdminNotification] = useState<string | null>(null);
+
+  const activeSessionAuthHashRef = useRef<string | null>(activeSessionAuthHash);
+  activeSessionAuthHashRef.current = activeSessionAuthHash;
+
+  const isAdminAuthenticatedRef = useRef<boolean>(isAdminAuthenticated);
+  isAdminAuthenticatedRef.current = isAdminAuthenticated;
+
+  const isAdminRememberedRef = useRef<boolean>(isAdminRemembered);
+  isAdminRememberedRef.current = isAdminRemembered;
 
   // Dynamic Master Administrator Password (persisted in localStorage)
   const [adminPassword, setAdminPassword] = useState<string>(() => {
@@ -231,6 +290,28 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, adminPassword);
   }, [adminPassword]);
+
+  // If authenticated but hash was not yet generated, seed it
+  useEffect(() => {
+    if (isAdminAuthenticated && !activeSessionAuthHash) {
+      const initialHash = computeSyncHash(adminPassword);
+      setActiveSessionAuthHash(initialHash);
+      activeSessionAuthHashRef.current = initialHash;
+      sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, initialHash);
+      if (isAdminRemembered) {
+        localStorage.setItem(ADMIN_AUTH_HASH_KEY, initialHash);
+      }
+
+      computeSha256Hash(adminPassword).then((sha256) => {
+        setActiveSessionAuthHash(sha256);
+        activeSessionAuthHashRef.current = sha256;
+        sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256);
+        if (isAdminRememberedRef.current) {
+          localStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256);
+        }
+      });
+    }
+  }, [isAdminAuthenticated, adminPassword, isAdminRemembered, activeSessionAuthHash]);
 
   // Firebase Firestore Real-Time Sync State
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
@@ -270,8 +351,30 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, [currentRole]);
 
   useEffect(() => {
-    localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, isAdminAuthenticated ? 'true' : 'false');
-  }, [isAdminAuthenticated]);
+    if (isAdminAuthenticated) {
+      sessionStorage.setItem(ADMIN_AUTH_STORAGE_KEY, 'true');
+      if (isAdminRemembered) {
+        localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, 'true');
+        localStorage.setItem(ADMIN_REMEMBER_ME_KEY, 'true');
+        if (activeSessionAuthHash) {
+          localStorage.setItem(ADMIN_AUTH_HASH_KEY, activeSessionAuthHash);
+        }
+      } else {
+        localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+        localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+        localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
+      }
+      if (activeSessionAuthHash) {
+        sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, activeSessionAuthHash);
+      }
+    } else {
+      sessionStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+      sessionStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+      localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+      localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
+    }
+  }, [isAdminAuthenticated, isAdminRemembered, activeSessionAuthHash]);
 
   useEffect(() => {
     if (loggedTeacherId) {
@@ -371,23 +474,84 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsFirebaseConnected(connected);
       if (!connected) return;
 
-      // 1. Subscribe to Admin Master Password changes in real time
-      unsubscribeAdmin = subscribeToAdminPassword((remoteData) => {
-        if (remoteData?.masterPassword) {
-          setAdminPassword((prev) => {
-            if (prev !== remoteData.masterPassword) {
-              localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remoteData.masterPassword);
-              return remoteData.masterPassword;
-            }
-            return prev;
-          });
-          setLastFirebaseSync(new Date().toLocaleTimeString());
+      // 1. Real-time Password Verification: Set up a Firestore onSnapshot listener on the admin_config settings document
+      unsubscribeAdmin = subscribeToAdminConfig((remoteData) => {
+        if (remoteData?.password || remoteData?.masterPassword) {
+          const remotePassword = (remoteData.password || remoteData.masterPassword).trim();
+          const remoteHash = remoteData.passwordHash;
+
+          // Check if admin is currently authenticated in this session
+          if (isAdminAuthenticatedRef.current) {
+            const currentSessionHash = activeSessionAuthHashRef.current;
+
+            computeSha256Hash(remotePassword).then((computedRemoteSha256) => {
+              const computedRemoteSync = computeSyncHash(remotePassword);
+              const targetRemoteHash = remoteHash || computedRemoteSha256;
+
+              const isMatch =
+                Boolean(currentSessionHash) &&
+                (currentSessionHash === targetRemoteHash ||
+                  currentSessionHash === computedRemoteSha256 ||
+                  currentSessionHash === computedRemoteSync);
+
+              // Auto-Logout on Password Change:
+              // If admin_config.password changes in the database and does not match the active session's authentication hash,
+              // automatically set isAdmin = false, clear localStorage, and show a notification:
+              // 'Admin password was updated on another device. Please log in again with the new password.'
+              if (!isMatch) {
+                console.warn(
+                  'Auto-Logout on Password Change: Remote password does not match active session authentication hash.'
+                );
+
+                // Automatically set isAdmin = false
+                setIsAdminAuthenticated(false);
+                isAdminAuthenticatedRef.current = false;
+                setActiveSessionAuthHash(null);
+                activeSessionAuthHashRef.current = null;
+                setIsAdminRemembered(false);
+                isAdminRememberedRef.current = false;
+
+                // Clear localStorage & sessionStorage
+                localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+                localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+                localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
+                sessionStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+                sessionStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+
+                // Show notification verbatim as specified
+                setAdminNotification(
+                  'Admin password was updated on another device. Please log in again with the new password.'
+                );
+
+                // Switch role away from admin tab
+                setCurrentRole((prev) => (prev === 'admin' ? 'parent' : prev));
+
+                // Update cached password
+                setAdminPassword(remotePassword);
+                localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
+                setLastFirebaseSync(new Date().toLocaleTimeString());
+                return;
+              }
+
+              // Active session matches remote password
+              setAdminPassword(remotePassword);
+              localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
+              setLastFirebaseSync(new Date().toLocaleTimeString());
+            });
+          } else {
+            // Not authenticated as admin, keep local password in sync
+            setAdminPassword(remotePassword);
+            localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
+            setLastFirebaseSync(new Date().toLocaleTimeString());
+          }
         } else {
           // Initialize document in Firestore if freshly provisioned
           const currentLocal = localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) || 'admin123';
-          syncAdminPasswordToFirestore(currentLocal, 'System Initialization').catch((err) =>
-            console.warn('Initial admin password sync note:', err)
-          );
+          computeSha256Hash(currentLocal).then((hash) => {
+            syncAdminPasswordToFirestore(currentLocal, 'System Initialization', hash).catch((err) =>
+              console.warn('Initial admin password sync note:', err)
+            );
+          });
         }
       });
 
@@ -505,10 +669,43 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   // RBAC Authentication methods
-  const loginAdmin = (password: string): boolean => {
+  const loginAdmin = (password: string, rememberMe: boolean = false): boolean => {
     if (password === adminPassword) {
+      const syncHash = computeSyncHash(password);
       setIsAdminAuthenticated(true);
+      isAdminAuthenticatedRef.current = true;
+      setIsAdminRemembered(rememberMe);
+      isAdminRememberedRef.current = rememberMe;
+      setActiveSessionAuthHash(syncHash);
+      activeSessionAuthHashRef.current = syncHash;
       setCurrentRole('admin');
+      setAdminNotification(null); // Clear any auto-logout alert
+
+      // Session Expiry:
+      // Do not keep Admin sessions logged in indefinitely on mobile devices unless explicitly checked ('Remember Me').
+      // Default to expiring the Admin session when the browser tab or app is closed.
+      sessionStorage.setItem(ADMIN_AUTH_STORAGE_KEY, 'true');
+      sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+
+      if (rememberMe) {
+        localStorage.setItem(ADMIN_AUTH_STORAGE_KEY, 'true');
+        localStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+        localStorage.setItem(ADMIN_REMEMBER_ME_KEY, 'true');
+      } else {
+        localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+        localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+        localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
+      }
+
+      computeSha256Hash(password).then((sha256) => {
+        setActiveSessionAuthHash(sha256);
+        activeSessionAuthHashRef.current = sha256;
+        sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256);
+        if (isAdminRememberedRef.current) {
+          localStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256);
+        }
+      });
+
       return true;
     }
     return false;
@@ -522,10 +719,10 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
-    if (!newPassword || newPassword.trim().length < 5) {
+    if (!newPassword || newPassword.trim().length < 4) {
       return {
         success: false,
-        message: 'New password must be at least 5 characters long.',
+        message: 'New password must be at least 4 characters long.',
       };
     }
 
@@ -540,17 +737,35 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setAdminPassword(trimmed);
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, trimmed);
 
-    // Synchronize to Firebase Firestore immediately for all devices
+    // Update active session authentication hash to match new password BEFORE writing to remote database
+    const syncHash = computeSyncHash(trimmed);
+    setActiveSessionAuthHash(syncHash);
+    activeSessionAuthHashRef.current = syncHash;
+    sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+    if (isAdminRemembered) {
+      localStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+    }
+
+    // Synchronize to Firebase Firestore immediately for all devices with SHA-256 hash
     setIsFirebaseSyncing(true);
-    syncAdminPasswordToFirestore(trimmed, 'Master Administrator')
-      .then(() => {
-        setIsFirebaseSyncing(false);
-        setLastFirebaseSync(new Date().toLocaleTimeString());
-      })
-      .catch((err) => {
-        setIsFirebaseSyncing(false);
-        console.warn('Firebase admin password sync warning:', err);
-      });
+    computeSha256Hash(trimmed).then((sha256Hash) => {
+      setActiveSessionAuthHash(sha256Hash);
+      activeSessionAuthHashRef.current = sha256Hash;
+      sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256Hash);
+      if (isAdminRememberedRef.current) {
+        localStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256Hash);
+      }
+
+      syncAdminPasswordToFirestore(trimmed, 'Master Administrator', sha256Hash)
+        .then(() => {
+          setIsFirebaseSyncing(false);
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        })
+        .catch((err) => {
+          setIsFirebaseSyncing(false);
+          console.warn('Firebase admin password sync warning:', err);
+        });
+    });
 
     return {
       success: true,
@@ -559,18 +774,55 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const resetAdminPasswordToDefault = () => {
-    setAdminPassword('admin123');
-    localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, 'admin123');
+    const defaultPwd = 'admin123';
+    setAdminPassword(defaultPwd);
+    localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, defaultPwd);
+
+    const syncHash = computeSyncHash(defaultPwd);
+    setActiveSessionAuthHash(syncHash);
+    activeSessionAuthHashRef.current = syncHash;
+    sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+    if (isAdminRemembered) {
+      localStorage.setItem(ADMIN_AUTH_HASH_KEY, syncHash);
+    }
+
     setIsFirebaseSyncing(true);
-    syncAdminPasswordToFirestore('admin123', 'Default Reset')
-      .then(() => {
-        setIsFirebaseSyncing(false);
-        setLastFirebaseSync(new Date().toLocaleTimeString());
-      })
-      .catch((err) => {
-        setIsFirebaseSyncing(false);
-        console.warn('Firebase reset sync warning:', err);
-      });
+    computeSha256Hash(defaultPwd).then((sha256Hash) => {
+      setActiveSessionAuthHash(sha256Hash);
+      activeSessionAuthHashRef.current = sha256Hash;
+      sessionStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256Hash);
+      if (isAdminRememberedRef.current) {
+        localStorage.setItem(ADMIN_AUTH_HASH_KEY, sha256Hash);
+      }
+
+      syncAdminPasswordToFirestore(defaultPwd, 'Default Reset', sha256Hash)
+        .then(() => {
+          setIsFirebaseSyncing(false);
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        })
+        .catch((err) => {
+          setIsFirebaseSyncing(false);
+          console.warn('Firebase reset sync warning:', err);
+        });
+    });
+  };
+
+  const logoutAdmin = () => {
+    setIsAdminAuthenticated(false);
+    isAdminAuthenticatedRef.current = false;
+    setActiveSessionAuthHash(null);
+    activeSessionAuthHashRef.current = null;
+    setIsAdminRemembered(false);
+    isAdminRememberedRef.current = false;
+    localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+    localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+    localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
+    sessionStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(ADMIN_AUTH_HASH_KEY);
+  };
+
+  const clearAdminNotification = () => {
+    setAdminNotification(null);
   };
 
   const updateTeacherPassword = async (
@@ -621,7 +873,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const syncAllCredentialsToFirebase = async (): Promise<{ success: boolean; message: string }> => {
     setIsFirebaseSyncing(true);
     try {
-      await syncAdminPasswordToFirestore(adminPassword, 'Manual Sync All');
+      const sha256 = await computeSha256Hash(adminPassword);
+      await syncAdminPasswordToFirestore(adminPassword, 'Manual Sync All', sha256);
       for (const t of teachers) {
         await syncTeacherToFirestore(t);
       }
@@ -638,10 +891,6 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         message: `Sync encountered error: ${e instanceof Error ? e.message : 'Unknown'}`,
       };
     }
-  };
-
-  const logoutAdmin = () => {
-    setIsAdminAuthenticated(false);
   };
 
   const loginTeacher = (employeeId: string, password: string) => {

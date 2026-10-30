@@ -3,6 +3,47 @@
   "title": "LankaEdu LMS Firestore Database Blueprint",
   "description": "Firestore schema and access control specifications for LankaEdu LMS Sri Lankan School Management System",
   "entities": {
+    "settings": {
+      "description": "System settings including administrator configuration",
+      "path": "settings/{settingId}",
+      "documents": {
+        "admin_config": {
+          "description": "Master Administrator configuration, real-time password verification, and authentication hash settings",
+          "fields": {
+            "password": {
+              "type": "string",
+              "description": "Master password for administrator full-access portal",
+              "minLength": 4,
+              "maxLength": 100
+            },
+            "masterPassword": {
+              "type": "string",
+              "description": "Master password backward compatibility alias",
+              "minLength": 4,
+              "maxLength": 100
+            },
+            "passwordHash": {
+              "type": "string",
+              "description": "Cryptographic authentication hash of the admin password",
+              "maxLength": 200
+            },
+            "updatedAt": {
+              "type": "string",
+              "description": "ISO timestamp of last password update"
+            },
+            "updatedBy": {
+              "type": "string",
+              "description": "Identifier of the actor who updated the password"
+            },
+            "isCustomSet": {
+              "type": "boolean",
+              "description": "Flag indicating if default admin password has been customized"
+            }
+          },
+          "required": ["password", "updatedAt"]
+        }
+      }
+    },
     "system_settings": {
       "description": "Global system configurations including Master Administrator credentials",
       "path": "system_settings/{settingId}",
@@ -13,7 +54,7 @@
             "masterPassword": {
               "type": "string",
               "description": "Master password for administrator full-access portal",
-              "minLength": 5,
+              "minLength": 4,
               "maxLength": 100
             },
             "updatedAt": {
