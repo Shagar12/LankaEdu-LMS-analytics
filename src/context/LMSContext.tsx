@@ -139,6 +139,7 @@ interface LMSContextType {
   currentRole: UserRole;
   isAdminAuthenticated: boolean;
   adminPassword: string;
+  isCustomPasswordSet: boolean;
   changeAdminPassword: (currentPassword: string, newPassword: string) => { success: boolean; message: string };
   resetAdminPasswordToDefault: () => void;
   currentTeacher: Teacher | null;
@@ -208,6 +209,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [adminPassword, setAdminPassword] = useState<string>(() => {
     return localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) || 'admin123';
   });
+
+  const isCustomPasswordSet = adminPassword !== 'admin123';
 
   useEffect(() => {
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, adminPassword);
@@ -454,7 +457,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, trimmed);
     return {
       success: true,
-      message: 'Administrator master password has been successfully updated.',
+      message: 'Administrator master password has been successfully updated and saved to localStorage (persists across device reboots and browser sessions).',
     };
   };
 
@@ -905,6 +908,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         currentRole,
         isAdminAuthenticated,
         adminPassword,
+        isCustomPasswordSet,
         changeAdminPassword,
         resetAdminPasswordToDefault,
         currentTeacher,

@@ -13,7 +13,9 @@ import {
   Layers,
   Sparkles,
   CheckCircle2,
+  Key,
 } from 'lucide-react';
+import { AdminPasswordSettingsCard } from '../settings/AdminPasswordSettingsCard';
 
 export const SchoolOverview: React.FC = () => {
   const {
@@ -26,6 +28,8 @@ export const SchoolOverview: React.FC = () => {
     setActiveTab,
     setSelectedStudentId,
     theme,
+    currentRole,
+    isCustomPasswordSet,
   } = useLMS();
 
   const isDark = theme === 'dark';
@@ -141,7 +145,24 @@ export const SchoolOverview: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {currentRole === 'admin' && (
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors border ${
+                  !isCustomPasswordSet
+                    ? 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/50 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700 animate-pulse'
+                    : 'bg-white hover:bg-slate-50 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 shadow-xs'
+                }`}
+                title="Update your administrator password in settings"
+              >
+                <Key className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Password Settings</span>
+                {!isCustomPasswordSet && (
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                )}
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('batch_entry')}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors"
@@ -216,6 +237,11 @@ export const SchoolOverview: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* In-App Admin Password Settings Module (Admin Dashboard) */}
+      {currentRole === 'admin' && (
+        <AdminPasswordSettingsCard defaultExpanded={!isCustomPasswordSet} />
+      )}
 
       {/* Grade-by-Grade Progression Spectrum (Grades 1 to 13) */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">

@@ -220,10 +220,10 @@ export const AdminSettingsView: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Change Administrator Master Password
+                  In-App Password Management (Master Administrator)
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Update your credentials for master role access across all grades & subjects
+                  Update your master admin password anytime directly from this interface. Persisted in browser localStorage (<code className="font-mono text-indigo-600 dark:text-indigo-400">lankaedu_admin_password_v1</code>) across sessions and device reboots.
                 </p>
               </div>
             </div>

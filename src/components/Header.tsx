@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLMS } from '../context/LMSContext';
-import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings } from 'lucide-react';
+import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key } from 'lucide-react';
 import { RoleSwitcher } from './auth/RoleSwitcher';
 
 interface HeaderProps {
@@ -8,7 +8,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
-  const { activeTab, setActiveTab, theme, toggleTheme, currentRole, isAdminAuthenticated } = useLMS();
+  const { activeTab, setActiveTab, theme, toggleTheme, currentRole, isAdminAuthenticated, isCustomPasswordSet } = useLMS();
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors sticky top-0 z-30">
@@ -96,14 +96,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
                 </button>
                 <button
                   onClick={() => setActiveTab('settings')}
-                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 ${
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                     activeTab === 'settings'
                       ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-semibold'
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                   }`}
+                  title="Update Administrator Master Password and System Settings"
                 >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>Settings</span>
+                  <Key className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Password Settings</span>
+                  {!isCustomPasswordSet && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Default password in use"></span>
+                  )}
                 </button>
               </>
             )}
@@ -193,19 +197,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
               {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* Admin Settings Quick Shortcut */}
+            {/* Admin Password & Settings Quick Shortcut */}
             {currentRole === 'admin' && (
               <button
                 onClick={() => setActiveTab('settings')}
-                title="Administrator Security & Password Settings"
-                aria-label="Admin Settings & Password"
-                className={`p-2 rounded-lg transition-colors ${
+                title={
+                  !isCustomPasswordSet
+                    ? 'Attention: Default master password in use. Click to change password.'
+                    : 'Administrator Password & System Settings'
+                }
+                aria-label="Admin Password & System Settings"
+                className={`p-2 rounded-lg transition-colors relative ${
                   activeTab === 'settings'
                     ? 'bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
-                <Settings className="w-4 h-4" />
+                <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                {!isCustomPasswordSet && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900"></span>
+                )}
               </button>
             )}
 
@@ -250,7 +261,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
                 { key: 'batch_entry', label: 'Mark Entry' },
                 { key: 'teachers_subjects', label: 'Staff & Subjects' },
                 { key: 'data_management', label: 'CSV' },
-                { key: 'settings', label: 'Settings' },
+                { key: 'settings', label: 'Password Settings' },
               ] as const
             ).map((t) => (
               <button
