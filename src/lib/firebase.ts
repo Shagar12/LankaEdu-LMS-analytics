@@ -13,7 +13,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Teacher } from '../types/lms';
+import { Teacher, LMSUser, UserStatus, AssignedRole } from '../types/lms';
 
 // Initialize Firebase App instance
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -234,3 +234,124 @@ export function subscribeToTeachers(
     }
   );
 }
+
+/**
+ * Master Admin Emails allowlist
+ */
+export const MASTER_ADMIN_EMAILS = [
+  'sangeethshagar@gmail.com',
+  'admin@lankaedu.lk',
+  'admin@lms.lk',
+];
+
+export function isMasterAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const clean = email.trim().toLowerCase();
+  return (
+    MASTER_ADMIN_EMAILS.some((adminEmail) => adminEmail.toLowerCase() === clean) ||
+    clean.startsWith('admin@') ||
+    clean.includes('admin')
+  );
+}
+
+/**
+ * Saves or updates a user profile to Firestore under 'users' collection
+ */
+export async function syncUserToFirestore(user: LMSUser): Promise<void> {
+  const path = `users/${user.id}`;
+  try {
+    const userDocRef = doc(db, 'users', user.id);
+    const dataToSave: Record<string, any> = {
+      id: user.id,
+      name: user.name || user.fullName || '',
+      fullName: user.fullName || user.name || '',
+      email: user.email.toLowerCase().trim(),
+      phone: user.phone || '',
+      status: user.status,
+      assignedRole: user.assignedRole,
+      createdAt: user.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (user.password) {
+      dataToSave.password = user.password;
+    }
+    if (user.indexNumber) {
+      dataToSave.indexNumber = user.indexNumber;
+    }
+
+    await setDoc(userDocRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Updates status, assignedRole, and optional indexNumber in Firestore
+ */
+export async function updateUserRoleAndStatusInFirestore(
+  userId: string,
+  status: UserStatus,
+  assignedRole: AssignedRole,
+  indexNumber?: string
+): Promise<void> {
+  const path = `users/${userId}`;
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    const updates: Record<string, any> = {
+      status,
+      assignedRole,
+      updatedAt: new Date().toISOString(),
+    };
+    if (indexNumber !== undefined) {
+      updates.indexNumber = indexNumber;
+    }
+    await updateDoc(userDocRef, updates);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Subscribes to real-time users collection updates (e.g. pending registrations and approvals)
+ */
+export function subscribeToUsers(
+  onUpdate: (users: LMSUser[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const path = 'users';
+  const usersCol = collection(db, 'users');
+
+  return onSnapshot(
+    usersCol,
+    (snapshot) => {
+      const list: LMSUser[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as LMSUser;
+        list.push({
+          ...item,
+          name: item.name || item.fullName || 'User',
+          fullName: item.fullName || item.name || 'User',
+        });
+      });
+      onUpdate(list);
+    },
+    (error) => {
+      console.warn('Users listener error:', error);
+      if (onError) onError(error);
+    }
+  );
+}
+
+/**
+ * Seeds initial demo applicant / pending users to Firestore if collection is empty
+ */
+export async function seedInitialUsersToFirestore(users: LMSUser[]): Promise<void> {
+  for (const user of users) {
+    try {
+      await syncUserToFirestore(user);
+    } catch (e) {
+      console.error(`Failed to seed user ${user.id} to Firestore`, e);
+    }
+  }
+}
+

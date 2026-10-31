@@ -14,9 +14,30 @@ import { ParentPortalView } from './components/parent/ParentPortalView';
 import { TeacherPortalView } from './components/teacher/TeacherPortalView';
 import { AdminSettingsView } from './components/settings/AdminSettingsView';
 
+import { UnifiedAuthPortal } from './components/auth/UnifiedAuthPortal';
+import { PendingReviewLockedState } from './components/auth/PendingReviewLockedState';
+import { AccountApprovalsPanel } from './components/admin/AccountApprovalsPanel';
+
 const LMSDashboardContent: React.FC = () => {
-  const { activeTab, selectedStudentId, setSelectedStudentId, currentRole } = useLMS();
+  const {
+    activeTab,
+    selectedStudentId,
+    setSelectedStudentId,
+    currentRole,
+    isPendingReview,
+    showLandingPage,
+  } = useLMS();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // 1. If user registration is pending administrator review
+  if (isPendingReview) {
+    return <PendingReviewLockedState />;
+  }
+
+  // 2. If user is unauthenticated or has requested the Landing Portal
+  if (showLandingPage) {
+    return <UnifiedAuthPortal />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-indigo-500/20 selection:text-indigo-700 dark:selection:text-indigo-300">
@@ -24,13 +45,27 @@ const LMSDashboardContent: React.FC = () => {
       {/* Top Header with Role Switcher */}
       <Header onOpenAddStudent={() => setIsAddModalOpen(true)} />
 
-      {/* Filter Toolbar for Grades, Divisions & Terms (hidden on parent lookup & admin settings to avoid clutter) */}
-      {!( (currentRole === 'parent' && activeTab === 'students') || activeTab === 'settings' ) && <FilterToolbar />}
+      {/* Filter Toolbar for Grades, Divisions & Terms */}
+      {!(
+        (currentRole === 'parent' && activeTab === 'students') ||
+        (currentRole === 'student' && activeTab === 'students') ||
+        activeTab === 'settings' ||
+        activeTab === 'approvals'
+      ) && <FilterToolbar />}
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Parent Portal Role Views */}
         {currentRole === 'parent' && (
+          <>
+            {activeTab === 'students' && <ParentPortalView />}
+            {activeTab === 'overview' && <SchoolOverview />}
+            {activeTab !== 'students' && activeTab !== 'overview' && <ParentPortalView />}
+          </>
+        )}
+
+        {/* Student Portal Role Views */}
+        {currentRole === 'student' && (
           <>
             {activeTab === 'students' && <ParentPortalView />}
             {activeTab === 'overview' && <SchoolOverview />}
@@ -55,6 +90,7 @@ const LMSDashboardContent: React.FC = () => {
         {currentRole === 'admin' && (
           <>
             {activeTab === 'overview' && <SchoolOverview />}
+            {activeTab === 'approvals' && <AccountApprovalsPanel />}
             {activeTab === 'analytics' && <ClassDivisionAnalytics />}
             {activeTab === 'students' && (
               <StudentListView onOpenAddStudent={() => setIsAddModalOpen(true)} />

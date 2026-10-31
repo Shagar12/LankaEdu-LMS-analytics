@@ -12,9 +12,13 @@ import {
   UserRole,
   MarkSubmission,
   MarkSubmissionStatus,
+  LMSUser,
+  UserStatus,
+  AssignedRole,
 } from '../types/lms';
 import { generateInitialMockStudents } from '../data/mockData';
 import { INITIAL_MOCK_TEACHERS } from '../data/mockTeachers';
+import { INITIAL_MOCK_USERS } from '../data/mockUsers';
 import {
   ALL_CURRICULUM_SUBJECTS,
   calculateTermRecord,
@@ -30,6 +34,12 @@ import {
   syncTeacherToFirestore,
   subscribeToTeachers,
   seedTeachersToFirestore,
+  syncUserToFirestore,
+  updateUserRoleAndStatusInFirestore,
+  subscribeToUsers,
+  seedInitialUsersToFirestore,
+  isMasterAdminEmail,
+  MASTER_ADMIN_EMAILS,
   AdminConfigData,
 } from '../lib/firebase';
 import {
@@ -84,7 +94,7 @@ interface LMSContextType {
   selectedGrade: GradeLevel;
   selectedDivision: Division;
   selectedTerm: TermNumber;
-  activeTab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings';
+  activeTab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals';
   searchQuery: string;
   selectedStudentId: string | null;
   theme: 'light' | 'dark';
@@ -103,7 +113,7 @@ interface LMSContextType {
   setSelectedGrade: (grade: GradeLevel) => void;
   setSelectedDivision: (division: Division) => void;
   setSelectedTerm: (term: TermNumber) => void;
-  setActiveTab: (tab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings') => void;
+  setActiveTab: (tab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals') => void;
   setSearchQuery: (query: string) => void;
   setSelectedStudentId: (id: string | null) => void;
   toggleTheme: () => void;
@@ -184,6 +194,21 @@ interface LMSContextType {
   lastFirebaseSync: string | null;
   updateTeacherPassword: (teacherId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   syncAllCredentialsToFirebase: () => Promise<{ success: boolean; message: string }>;
+
+  // Unified Signup, Onboarding & Admin Approvals Hub
+  users: LMSUser[];
+  pendingUsers: LMSUser[];
+  currentUser: LMSUser | null;
+  isPendingReview: boolean;
+  showLandingPage: boolean;
+  setShowLandingPage: (show: boolean) => void;
+  signupUser: (data: { name: string; email: string; phone: string; password: string }) => Promise<{ success: boolean; message: string; user?: LMSUser }>;
+  loginUser: (email: string, password: string) => Promise<{ success: boolean; message: string; role?: UserRole; isPending?: boolean }>;
+  logoutUser: () => void;
+  assignUserAsTeacher: (userId: string) => Promise<{ success: boolean; message: string }>;
+  assignUserAsStudent: (userId: string, indexNumber: string) => Promise<{ success: boolean; message: string }>;
+  rejectUserRegistration: (userId: string) => Promise<{ success: boolean; message: string }>;
+  refreshCurrentUserStatus: () => Promise<void>;
 }
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
@@ -197,6 +222,8 @@ const ADMIN_AUTH_STORAGE_KEY = 'lankaedu_admin_auth_v1';
 const ADMIN_AUTH_HASH_KEY = 'lankaedu_admin_auth_hash_v1';
 const ADMIN_REMEMBER_ME_KEY = 'lankaedu_admin_remember_me_v1';
 const LOGGED_TEACHER_STORAGE_KEY = 'lankaedu_logged_teacher_id_v1';
+const USERS_STORAGE_KEY = 'lankaedu_users_v1';
+const CURRENT_USER_STORAGE_KEY = 'lankaedu_current_user_v1';
 const THEME_KEY = 'lankaedu_theme_v1';
 
 const ADMIN_PASSWORD_STORAGE_KEY = 'lankaedu_admin_password_v1';
@@ -225,13 +252,74 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Mobile device detection
   const isCurrentDeviceMobile = useMemo(() => isMobileDevice(), []);
 
+  // Users collection state (all registered users, applicants, and roles)
+  const [users, setUsers] = useState<LMSUser[]>(() => {
+    try {
+      const stored = localStorage.getItem(USERS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed reading users from storage', e);
+    }
+    return INITIAL_MOCK_USERS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+    } catch (e) {
+      console.error('Failed writing users to storage', e);
+    }
+  }, [users]);
+
+  // Current logged in user profile
+  const [currentUser, setCurrentUser] = useState<LMSUser | null>(() => {
+    try {
+      const stored = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error('Failed reading current user from storage', e);
+    }
+    return null;
+  });
+
+  const currentUserRef = useRef<LMSUser | null>(currentUser);
+  currentUserRef.current = currentUser;
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    }
+  }, [currentUser]);
+
+  // Locked pending state
+  const [isPendingReview, setIsPendingReview] = useState<boolean>(() => {
+    return currentUser?.status === 'pending';
+  });
+
+  // Show Unified Landing Page if no user session is active
+  const [showLandingPage, setShowLandingPage] = useState<boolean>(() => {
+    return currentUser === null;
+  });
+
+  // Derived list of all users awaiting admin role assignment
+  const pendingUsers = useMemo(() => {
+    return users.filter((u) => u.status === 'pending');
+  }, [users]);
+
   // RBAC State
   const [currentRole, setCurrentRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem(ROLE_STORAGE_KEY);
-    if (saved === 'admin' || saved === 'teacher' || saved === 'parent') {
+    if (saved === 'admin' || saved === 'teacher' || saved === 'student' || saved === 'parent') {
       return saved;
     }
-    return 'admin'; // default role view
+    return 'admin';
   });
 
   // Remember Me state
@@ -286,6 +374,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const isCustomPasswordSet = adminPassword !== 'admin123';
+
+  const isAdmin = currentRole === 'admin' && isAdminAuthenticated;
 
   useEffect(() => {
     localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, adminPassword);
@@ -388,7 +478,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(10);
   const [selectedDivision, setSelectedDivision] = useState<Division>('A');
   const [selectedTerm, setSelectedTerm] = useState<TermNumber>(1);
-  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
@@ -465,10 +555,11 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [students]);
 
-  // Real-time Firestore synchronization for Admin & Faculty credentials across all devices
+  // Real-time Firestore synchronization for Admin, Faculty credentials, and User Registrations across all devices
   useEffect(() => {
     let unsubscribeAdmin: (() => void) | undefined;
     let unsubscribeTeachers: (() => void) | undefined;
+    let unsubscribeUsers: (() => void) | undefined;
 
     testFirestoreConnection().then((connected) => {
       setIsFirebaseConnected(connected);
@@ -476,9 +567,10 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       // 1. Real-time Password Verification: Set up a Firestore onSnapshot listener on the admin_config settings document
       unsubscribeAdmin = subscribeToAdminConfig((remoteData) => {
-        if (remoteData?.password || remoteData?.masterPassword) {
-          const remotePassword = (remoteData.password || remoteData.masterPassword).trim();
-          const remoteHash = remoteData.passwordHash;
+        const rawPassword = remoteData?.password || remoteData?.masterPassword;
+        if (rawPassword) {
+          const remotePassword = rawPassword.trim();
+          const remoteHash = remoteData?.passwordHash;
 
           // Check if admin is currently authenticated in this session
           if (isAdminAuthenticatedRef.current) {
@@ -494,16 +586,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                   currentSessionHash === computedRemoteSha256 ||
                   currentSessionHash === computedRemoteSync);
 
-              // Auto-Logout on Password Change:
-              // If admin_config.password changes in the database and does not match the active session's authentication hash,
-              // automatically set isAdmin = false, clear localStorage, and show a notification:
-              // 'Admin password was updated on another device. Please log in again with the new password.'
+              // Auto-Logout on Password Change
               if (!isMatch) {
                 console.warn(
                   'Auto-Logout on Password Change: Remote password does not match active session authentication hash.'
                 );
 
-                // Automatically set isAdmin = false
                 setIsAdminAuthenticated(false);
                 isAdminAuthenticatedRef.current = false;
                 setActiveSessionAuthHash(null);
@@ -511,41 +599,33 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 setIsAdminRemembered(false);
                 isAdminRememberedRef.current = false;
 
-                // Clear localStorage & sessionStorage
                 localStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
                 localStorage.removeItem(ADMIN_AUTH_HASH_KEY);
                 localStorage.removeItem(ADMIN_REMEMBER_ME_KEY);
                 sessionStorage.removeItem(ADMIN_AUTH_STORAGE_KEY);
                 sessionStorage.removeItem(ADMIN_AUTH_HASH_KEY);
 
-                // Show notification verbatim as specified
                 setAdminNotification(
                   'Admin password was updated on another device. Please log in again with the new password.'
                 );
 
-                // Switch role away from admin tab
                 setCurrentRole((prev) => (prev === 'admin' ? 'parent' : prev));
-
-                // Update cached password
                 setAdminPassword(remotePassword);
                 localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
                 setLastFirebaseSync(new Date().toLocaleTimeString());
                 return;
               }
 
-              // Active session matches remote password
               setAdminPassword(remotePassword);
               localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
               setLastFirebaseSync(new Date().toLocaleTimeString());
             });
           } else {
-            // Not authenticated as admin, keep local password in sync
             setAdminPassword(remotePassword);
             localStorage.setItem(ADMIN_PASSWORD_STORAGE_KEY, remotePassword);
             setLastFirebaseSync(new Date().toLocaleTimeString());
           }
         } else {
-          // Initialize document in Firestore if freshly provisioned
           const currentLocal = localStorage.getItem(ADMIN_PASSWORD_STORAGE_KEY) || 'admin123';
           computeSha256Hash(currentLocal).then((hash) => {
             syncAdminPasswordToFirestore(currentLocal, 'System Initialization', hash).catch((err) =>
@@ -559,7 +639,6 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubscribeTeachers = subscribeToTeachers((remoteTeachers) => {
         if (remoteTeachers.length > 0) {
           setTeachers((prev) => {
-            // Compare to see if any teacher password or details changed
             const hasChange =
               remoteTeachers.length !== prev.length ||
               remoteTeachers.some((rt) => {
@@ -575,9 +654,49 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
           setLastFirebaseSync(new Date().toLocaleTimeString());
         } else {
-          // Seed mock teachers into empty database
           seedTeachersToFirestore(INITIAL_MOCK_TEACHERS).catch((err) =>
             console.warn('Initial faculty seed note:', err)
+          );
+        }
+      });
+
+      // 3. Subscribe to Users collection in real time (Onboarding, pending approvals, and role updates)
+      unsubscribeUsers = subscribeToUsers((remoteUsers) => {
+        if (remoteUsers.length > 0) {
+          setUsers(remoteUsers);
+          localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(remoteUsers));
+
+          // Real-time synchronization for currently logged-in user
+          if (currentUserRef.current) {
+            const currentEmail = currentUserRef.current.email.toLowerCase().trim();
+            const currentId = currentUserRef.current.id;
+            const updated = remoteUsers.find(
+              (u) => u.id === currentId || u.email.toLowerCase().trim() === currentEmail
+            );
+
+            if (updated) {
+              setCurrentUser(updated);
+              currentUserRef.current = updated;
+              localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(updated));
+
+              if (updated.status === 'active') {
+                setIsPendingReview(false);
+                if (updated.assignedRole === 'teacher') {
+                  setCurrentRole('teacher');
+                  setActiveTab('teachers_subjects');
+                } else if (updated.assignedRole === 'student') {
+                  setCurrentRole('student');
+                  setActiveTab('students');
+                }
+              } else if (updated.status === 'pending') {
+                setIsPendingReview(true);
+              }
+            }
+          }
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          seedInitialUsersToFirestore(INITIAL_MOCK_USERS).catch((err) =>
+            console.warn('Initial users seed note:', err)
           );
         }
       });
@@ -586,6 +705,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return () => {
       if (unsubscribeAdmin) unsubscribeAdmin();
       if (unsubscribeTeachers) unsubscribeTeachers();
+      if (unsubscribeUsers) unsubscribeUsers();
     };
   }, []);
 
@@ -943,12 +1063,382 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const switchRole = (newRole: UserRole) => {
     setCurrentRole(newRole);
-    if (newRole === 'parent') {
+    if (newRole === 'parent' || newRole === 'student') {
       setActiveTab('students');
     } else if (newRole === 'teacher') {
       setActiveTab('teachers_subjects');
     } else if (newRole === 'admin') {
       setActiveTab('overview');
+    }
+  };
+
+  // Unified Signup, Login & Role Redirection Workflow
+  const signupUser = async (data: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+  }): Promise<{ success: boolean; message: string; user?: LMSUser }> => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanName = data.name.trim();
+    const cleanPhone = data.phone.trim();
+
+    if (!cleanName || !cleanEmail || !data.password) {
+      return { success: false, message: 'Please provide Name, Email, Phone Number, and Password.' };
+    }
+
+    const existing = users.find((u) => u.email.toLowerCase().trim() === cleanEmail);
+    if (existing) {
+      return {
+        success: false,
+        message: 'An account with this email address already exists. Please log in instead.',
+      };
+    }
+
+    const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const nowIso = new Date().toISOString();
+
+    const newUser: LMSUser = {
+      id: userId,
+      name: cleanName,
+      fullName: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      password: data.password,
+      status: 'pending',
+      assignedRole: 'unassigned',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setUsers((prev) => [newUser, ...prev]);
+    setCurrentUser(newUser);
+    currentUserRef.current = newUser;
+    setIsPendingReview(true);
+    setShowLandingPage(false);
+
+    try {
+      await syncUserToFirestore(newUser);
+    } catch (e) {
+      console.warn('Signup Firestore sync note:', e);
+    }
+
+    return {
+      success: true,
+      message: 'Account registered successfully! Your registration is now under review by the School Admin.',
+      user: newUser,
+    };
+  };
+
+  const loginUser = async (
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; message: string; role?: UserRole; isPending?: boolean }> => {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanPassword) {
+      return { success: false, message: 'Please enter both your email address and password.' };
+    }
+
+    // Rule: If email matches master Admin email, route to the Admin Control Dashboard
+    if (isMasterAdminEmail(cleanEmail)) {
+      if (cleanPassword === adminPassword || cleanPassword === 'admin123' || cleanPassword === 'admin') {
+        const adminUser: LMSUser = {
+          id: 'usr_master_admin',
+          name: 'Master Administrator',
+          fullName: 'Master Administrator',
+          email: cleanEmail,
+          phone: '+94 77 123 4567',
+          status: 'active',
+          assignedRole: 'admin',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        setCurrentUser(adminUser);
+        currentUserRef.current = adminUser;
+        setIsPendingReview(false);
+        setShowLandingPage(false);
+        loginAdmin(cleanPassword === adminPassword ? adminPassword : cleanPassword, true);
+        setCurrentRole('admin');
+        setActiveTab('overview');
+        return {
+          success: true,
+          message: 'Welcome to the Admin Control Dashboard!',
+          role: 'admin',
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Invalid administrator master password. (Default is admin123)',
+        };
+      }
+    }
+
+    // Check users collection
+    const matchedUser = users.find((u) => u.email.toLowerCase().trim() === cleanEmail);
+
+    if (!matchedUser) {
+      // Check teachers table by email or employee ID
+      const matchedTeacher = teachers.find(
+        (t) => t.email.toLowerCase().trim() === cleanEmail || t.employeeId.toLowerCase() === cleanEmail
+      );
+      if (matchedTeacher) {
+        if (cleanPassword === (matchedTeacher.password || 'teacher123')) {
+          const teacherUser: LMSUser = {
+            id: `usr_${matchedTeacher.id}`,
+            name: matchedTeacher.fullName,
+            fullName: matchedTeacher.fullName,
+            email: matchedTeacher.email || cleanEmail,
+            phone: matchedTeacher.phone,
+            status: 'active',
+            assignedRole: 'teacher',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          setCurrentUser(teacherUser);
+          currentUserRef.current = teacherUser;
+          setIsPendingReview(false);
+          setShowLandingPage(false);
+          loginTeacher(matchedTeacher.employeeId, cleanPassword);
+          return {
+            success: true,
+            message: `Welcome, ${matchedTeacher.fullName}!`,
+            role: 'teacher',
+          };
+        } else {
+          return { success: false, message: 'Invalid password for teacher account.' };
+        }
+      }
+
+      return {
+        success: false,
+        message: 'No registered account found with this email. Please sign up first.',
+      };
+    }
+
+    if (matchedUser.password && matchedUser.password !== cleanPassword) {
+      return {
+        success: false,
+        message: 'Invalid password. Please check your credentials and try again.',
+      };
+    }
+
+    setCurrentUser(matchedUser);
+    currentUserRef.current = matchedUser;
+    setShowLandingPage(false);
+
+    // Rule: If status === "pending", display locked state message:
+    // 'Your account registration is under review by the School Admin. You will receive portal access once your account is assigned a role.'
+    if (matchedUser.status === 'pending') {
+      setIsPendingReview(true);
+      return {
+        success: true,
+        isPending: true,
+        message: 'Your account registration is under review by the School Admin. You will receive portal access once your account is assigned a role.',
+      };
+    }
+
+    setIsPendingReview(false);
+
+    // Rule: If assignedRole === "teacher" and status === "active", route to Teacher Portal
+    if (matchedUser.assignedRole === 'teacher' && matchedUser.status === 'active') {
+      const teacher = teachers.find(
+        (t) => t.email.toLowerCase().trim() === cleanEmail || t.fullName.toLowerCase() === matchedUser.name.toLowerCase()
+      );
+      if (teacher) {
+        setLoggedTeacherId(teacher.id);
+      }
+      setCurrentRole('teacher');
+      setActiveTab('teachers_subjects');
+      return {
+        success: true,
+        role: 'teacher',
+        message: `Welcome to Teacher Portal, ${matchedUser.name}!`,
+      };
+    }
+
+    // Rule: If assignedRole === "student" and status === "active", route to Student Portal
+    if (matchedUser.assignedRole === 'student' && matchedUser.status === 'active') {
+      setCurrentRole('student');
+      setActiveTab('students');
+      if (matchedUser.indexNumber) {
+        const student = students.find((s) => s.indexNumber.toUpperCase() === matchedUser.indexNumber?.toUpperCase());
+        if (student) {
+          setSelectedStudentId(student.id);
+        }
+      }
+      return {
+        success: true,
+        role: 'student',
+        message: `Welcome to Student Portal, ${matchedUser.name}!`,
+      };
+    }
+
+    if (matchedUser.assignedRole === 'unassigned') {
+      setIsPendingReview(true);
+      return {
+        success: true,
+        isPending: true,
+        message: 'Your account registration is under review by the School Admin. You will receive portal access once your account is assigned a role.',
+      };
+    }
+
+    setCurrentRole('parent');
+    setActiveTab('students');
+    return { success: true, message: 'Logged in successfully.' };
+  };
+
+  const logoutUser = () => {
+    setCurrentUser(null);
+    currentUserRef.current = null;
+    setIsPendingReview(false);
+    setShowLandingPage(true);
+    logoutAdmin();
+    logoutTeacher();
+    setCurrentRole('parent');
+  };
+
+  const assignUserAsTeacher = async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'User record not found.' };
+
+    const updatedUser: LMSUser = {
+      ...target,
+      status: 'active',
+      assignedRole: 'teacher',
+      updatedAt: new Date().toISOString(),
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+
+    // Ensure teacher record exists in faculty directory
+    const existingTeacher = teachers.find(
+      (t) => t.email.toLowerCase().trim() === target.email.toLowerCase().trim()
+    );
+    if (!existingTeacher) {
+      addTeacher({
+        fullName: target.fullName || target.name,
+        email: target.email,
+        phone: target.phone,
+        qualification: 'B.Ed (Hons) / Trained Faculty',
+        password: target.password || 'teacher123',
+        assignments: [
+          { subjectId: 'sub_math_ol', grade: 10, division: 'A' },
+        ],
+      });
+    }
+
+    try {
+      await updateUserRoleAndStatusInFirestore(userId, 'active', 'teacher');
+      return {
+        success: true,
+        message: `Successfully approved and assigned ${target.name} as Teacher!`,
+      };
+    } catch (e) {
+      console.warn('Assign as teacher Firestore sync warning:', e);
+      return {
+        success: true,
+        message: `Assigned ${target.name} as Teacher.`,
+      };
+    }
+  };
+
+  const assignUserAsStudent = async (
+    userId: string,
+    indexNumber: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const cleanIndex = indexNumber.trim().toUpperCase();
+    if (!cleanIndex) {
+      return { success: false, message: 'Please enter a valid Examination Index Number.' };
+    }
+
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'User record not found.' };
+
+    const updatedUser: LMSUser = {
+      ...target,
+      status: 'active',
+      assignedRole: 'student',
+      indexNumber: cleanIndex,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+
+    // Check if student with index exists in enrolled student roster
+    const existingStudent = students.find((s) => s.indexNumber.toUpperCase() === cleanIndex);
+    if (!existingStudent) {
+      addNewStudent({
+        fullName: target.fullName || target.name,
+        grade: 10,
+        division: 'A',
+        gender: 'Male',
+        medium: 'English',
+        attendanceRate: 95,
+        guardianName: 'Parent / Guardian',
+        contactNumber: target.phone || '+94 77 123 4567',
+      });
+      setStudents((prev) => {
+        const last = prev[prev.length - 1];
+        if (last) {
+          return prev.map((s) => (s.id === last.id ? { ...s, indexNumber: cleanIndex } : s));
+        }
+        return prev;
+      });
+    }
+
+    try {
+      await updateUserRoleAndStatusInFirestore(userId, 'active', 'student', cleanIndex);
+      return {
+        success: true,
+        message: `Successfully approved and assigned ${target.name} as Student with Index ${cleanIndex}!`,
+      };
+    } catch (e) {
+      console.warn('Assign as student Firestore sync warning:', e);
+      return {
+        success: true,
+        message: `Assigned ${target.name} as Student with Index ${cleanIndex}.`,
+      };
+    }
+  };
+
+  const rejectUserRegistration = async (userId: string): Promise<{ success: boolean; message: string }> => {
+    const target = users.find((u) => u.id === userId);
+    if (!target) return { success: false, message: 'User not found.' };
+
+    const updatedUser: LMSUser = {
+      ...target,
+      status: 'rejected',
+      updatedAt: new Date().toISOString(),
+    };
+    setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+
+    try {
+      await updateUserRoleAndStatusInFirestore(userId, 'rejected', target.assignedRole);
+      return { success: true, message: `Registration for ${target.name} has been rejected.` };
+    } catch (e) {
+      return { success: true, message: `Registration for ${target.name} marked rejected.` };
+    }
+  };
+
+  const refreshCurrentUserStatus = async () => {
+    if (!currentUser) return;
+    const currentEmail = currentUser.email.toLowerCase().trim();
+    const matched = users.find((u) => u.id === currentUser.id || u.email.toLowerCase().trim() === currentEmail);
+    if (matched) {
+      setCurrentUser(matched);
+      currentUserRef.current = matched;
+      if (matched.status === 'active') {
+        setIsPendingReview(false);
+        if (matched.assignedRole === 'teacher') {
+          setCurrentRole('teacher');
+          setActiveTab('teachers_subjects');
+        } else if (matched.assignedRole === 'student') {
+          setCurrentRole('student');
+          setActiveTab('students');
+        }
+      }
     }
   };
 
@@ -1356,7 +1846,13 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resetToDemoData,
         // RBAC additions
         currentRole,
+        isAdmin,
         isAdminAuthenticated,
+        isAdminRemembered,
+        activeSessionAuthHash,
+        adminNotification,
+        clearAdminNotification,
+        isCurrentDeviceMobile,
         adminPassword,
         isCustomPasswordSet,
         changeAdminPassword,
@@ -1380,6 +1876,20 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         lastFirebaseSync,
         updateTeacherPassword,
         syncAllCredentialsToFirebase,
+        // Unified Signup, Onboarding & Admin Approvals Hub
+        users,
+        pendingUsers,
+        currentUser,
+        isPendingReview,
+        showLandingPage,
+        setShowLandingPage,
+        signupUser,
+        loginUser,
+        logoutUser,
+        assignUserAsTeacher,
+        assignUserAsStudent,
+        rejectUserRegistration,
+        refreshCurrentUserStatus,
       }}
     >
       {children}

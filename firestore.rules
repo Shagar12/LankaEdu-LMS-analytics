@@ -53,6 +53,27 @@ service cloud.firestore {
         && (!('assignments' in data) || data.assignments is list);
     }
 
+    // Validation helper for User document (Signup onboarding and status/role assignment)
+    function isValidUserDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'name', 'fullName', 'email', 'phone', 'password', 
+          'status', 'assignedRole', 'indexNumber', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.email is string
+        && data.email.size() >= 3
+        && data.status in ['pending', 'active', 'rejected']
+        && data.assignedRole in ['unassigned', 'teacher', 'student', 'admin']
+        && (!('name' in data) || (data.name is string && data.name.size() <= 120))
+        && (!('fullName' in data) || (data.fullName is string && data.fullName.size() <= 120))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 40))
+        && (!('password' in data) || (data.password is string && data.password.size() <= 100))
+        && (!('indexNumber' in data) || (data.indexNumber is string && data.indexNumber.size() <= 50))
+        && (!('createdAt' in data) || data.createdAt is string)
+        && (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
     // Settings collection (Admin config settings document: settings/admin_config)
     match /settings/{settingId} {
       allow read: if true;
@@ -73,6 +94,16 @@ service cloud.firestore {
       allow create: if isValidTeacherDoc(request.resource.data)
         && request.resource.data.id == teacherId;
       allow update: if isValidTeacherDoc(request.resource.data)
+        && request.resource.data.id == resource.data.id;
+      allow delete: if true;
+    }
+
+    // Users collection (Onboarding, pending approvals, and role assignments)
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if isValidUserDoc(request.resource.data)
+        && request.resource.data.id == userId;
+      allow update: if isValidUserDoc(request.resource.data)
         && request.resource.data.id == resource.data.id;
       allow delete: if true;
     }

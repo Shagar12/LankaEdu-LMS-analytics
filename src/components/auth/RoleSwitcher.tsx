@@ -11,6 +11,7 @@ import {
   Check,
   Key,
   Settings,
+  UserCheck,
 } from 'lucide-react';
 import { AdminLoginModal } from './AdminLoginModal';
 import { TeacherLoginModal } from './TeacherLoginModal';
@@ -20,9 +21,11 @@ export const RoleSwitcher: React.FC = () => {
     currentRole,
     isAdminAuthenticated,
     currentTeacher,
+    currentUser,
     switchRole,
     logoutAdmin,
     logoutTeacher,
+    logoutUser,
     setActiveTab,
   } = useLMS();
 
@@ -57,8 +60,9 @@ export const RoleSwitcher: React.FC = () => {
       } else {
         switchRole('teacher');
       }
+    } else if (role === 'student') {
+      switchRole('student');
     } else {
-      // Parent portal needs no authentication
       switchRole('parent');
     }
   };
@@ -74,6 +78,8 @@ export const RoleSwitcher: React.FC = () => {
               ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
               : currentRole === 'teacher'
               ? 'bg-emerald-50/80 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+              : currentRole === 'student'
+              ? 'bg-blue-50/80 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
               : 'bg-amber-50/80 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
           }`}
         >
@@ -81,6 +87,8 @@ export const RoleSwitcher: React.FC = () => {
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
           ) : currentRole === 'teacher' ? (
             <GraduationCap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          ) : currentRole === 'student' ? (
+            <UserCheck className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
           ) : (
             <Users className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
           )}
@@ -94,6 +102,8 @@ export const RoleSwitcher: React.FC = () => {
                 ? 'Administrator'
                 : currentRole === 'teacher'
                 ? currentTeacher ? currentTeacher.fullName.split(' ')[0] + ' ' + (currentTeacher.fullName.split(' ')[1] || '') : 'Teacher Portal'
+                : currentRole === 'student'
+                ? currentUser ? currentUser.name.split(' ')[0] : 'Student Portal'
                 : 'Parent Portal'}
             </span>
           </div>
@@ -169,7 +179,36 @@ export const RoleSwitcher: React.FC = () => {
               </button>
             </div>
 
-            {/* Option 3: Parent Portal */}
+            {/* Option 3: Student Portal */}
+            <div className="p-1">
+              <button
+                onClick={() => handleSelectRole('student')}
+                className={`w-full text-left p-2.5 rounded-lg text-xs flex items-start gap-2.5 transition-colors ${
+                  currentRole === 'student'
+                    ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200'
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="w-7 h-7 rounded-md bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0 mt-0.5">
+                  <UserCheck className="w-4 h-4" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold">Student Portal</span>
+                    {currentRole === 'student' && (
+                      <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    )}
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                    {currentUser?.assignedRole === 'student' && currentUser.indexNumber
+                      ? `Index: ${currentUser.indexNumber} · Term Results & Performance`
+                      : 'Authorized Student Academic Progress View'}
+                  </span>
+                </div>
+              </button>
+            </div>
+
+            {/* Option 4: Parent Portal */}
             <div className="p-1">
               <button
                 onClick={() => handleSelectRole('parent')}
@@ -197,7 +236,7 @@ export const RoleSwitcher: React.FC = () => {
             </div>
 
             {/* Logout/Re-authenticate Action bar */}
-            <div className="mt-1 pt-2 border-t border-slate-100 dark:border-slate-800 px-3 py-1.5 flex items-center justify-between text-xs">
+            <div className="mt-1 pt-2 border-t border-slate-100 dark:border-slate-800 px-3 py-1.5 flex flex-col gap-1 text-xs">
               {currentRole === 'admin' && isAdminAuthenticated && (
                 <div className="flex items-center justify-between w-full gap-2">
                   <button
@@ -208,7 +247,7 @@ export const RoleSwitcher: React.FC = () => {
                     className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
                   >
                     <Settings className="w-3 h-3" />
-                    <span>Change Password / Settings</span>
+                    <span>Password / Settings</span>
                   </button>
                   <button
                     onClick={() => {
@@ -237,11 +276,16 @@ export const RoleSwitcher: React.FC = () => {
                 </button>
               )}
 
-              {currentRole === 'parent' && (
-                <span className="text-[11px] text-slate-400">
-                  Read-Only Public Portal
-                </span>
-              )}
+              <button
+                onClick={() => {
+                  logoutUser();
+                  setIsOpen(false);
+                }}
+                className="w-full text-left pt-1 mt-1 border-t border-slate-100 dark:border-slate-800 text-[11px] font-semibold text-red-600 hover:underline flex items-center gap-1"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Exit to Unified Signup & Login Portal</span>
+              </button>
             </div>
           </div>
         )}

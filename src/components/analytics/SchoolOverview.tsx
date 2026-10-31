@@ -14,6 +14,8 @@ import {
   Sparkles,
   CheckCircle2,
   Key,
+  UserCheck,
+  Clock,
 } from 'lucide-react';
 import { AdminPasswordSettingsCard } from '../settings/AdminPasswordSettingsCard';
 
@@ -30,6 +32,7 @@ export const SchoolOverview: React.FC = () => {
     theme,
     currentRole,
     isCustomPasswordSet,
+    pendingUsers,
   } = useLMS();
 
   const isDark = theme === 'dark';
@@ -126,6 +129,35 @@ export const SchoolOverview: React.FC = () => {
   return (
     <div className="space-y-6">
       
+      {/* Account Approvals Notice for Admin */}
+      {currentRole === 'admin' && pendingUsers.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-300 dark:border-amber-800/80 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shrink-0 shadow-sm">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Account Registrations Pending Review ({pendingUsers.length})
+                </h3>
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                New applicants have signed up and are waiting for role clearance in the Account Approvals panel.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab('approvals')}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-xs transition-colors shrink-0"
+          >
+            <span>Review & Assign Roles</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Welcome & High Level Metrics Banner */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">

@@ -128,6 +128,61 @@
         }
       },
       "required": ["id", "employeeId", "fullName", "password", "updatedAt"]
+    },
+    "users": {
+      "description": "User profiles, registration status, and assigned school role for LankaEdu LMS onboarding",
+      "path": "users/{userId}",
+      "fields": {
+        "id": {
+          "type": "string",
+          "description": "Unique user ID (e.g. usr_123 or sanitized email key)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the registered user",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full name alias for interoperability"
+        },
+        "email": {
+          "type": "string",
+          "description": "Official email address used for login"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Contact phone number"
+        },
+        "password": {
+          "type": "string",
+          "description": "Login password"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "active", "rejected"],
+          "description": "Account approval status. Defaults to 'pending' upon registration."
+        },
+        "assignedRole": {
+          "type": "string",
+          "enum": ["unassigned", "teacher", "student", "admin"],
+          "description": "Assigned portal role. Defaults to 'unassigned' until School Admin approves."
+        },
+        "indexNumber": {
+          "type": "string",
+          "description": "Student Examination Index Number if assigned as student"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp of user registration"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of last account update or role assignment"
+        }
+      },
+      "required": ["id", "name", "email", "status", "assignedRole"]
     }
   }
 }

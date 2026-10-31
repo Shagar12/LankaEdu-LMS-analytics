@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLMS } from '../context/LMSContext';
-import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key } from 'lucide-react';
+import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key, UserCheck, LogOut } from 'lucide-react';
 import { RoleSwitcher } from './auth/RoleSwitcher';
 
 interface HeaderProps {
@@ -8,7 +8,19 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
-  const { activeTab, setActiveTab, theme, toggleTheme, currentRole, isAdminAuthenticated, isCustomPasswordSet } = useLMS();
+  const {
+    activeTab,
+    setActiveTab,
+    theme,
+    toggleTheme,
+    currentRole,
+    isAdminAuthenticated,
+    isCustomPasswordSet,
+    pendingUsers,
+    currentUser,
+    logoutUser,
+    setShowLandingPage,
+  } = useLMS();
 
   return (
     <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors sticky top-0 z-30">
@@ -95,6 +107,23 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
                   CSV Exchange
                 </button>
                 <button
+                  onClick={() => setActiveTab('approvals')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                    activeTab === 'approvals'
+                      ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                  title="Review pending account registrations and assign roles"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Account Approvals</span>
+                  {pendingUsers.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white animate-pulse">
+                      {pendingUsers.length}
+                    </span>
+                  )}
+                </button>
+                <button
                   onClick={() => setActiveTab('settings')}
                   className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                     activeTab === 'settings'
@@ -153,6 +182,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
                   }`}
                 >
                   Student Roster (Read-Only)
+                </button>
+              </>
+            )}
+
+            {currentRole === 'student' && (
+              <>
+                <button
+                  onClick={() => setActiveTab('students')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
+                    activeTab === 'students'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Student Academic Report
+                </button>
+                <button
+                  onClick={() => setActiveTab('overview')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
+                    activeTab === 'overview'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  School Benchmarks
                 </button>
               </>
             )}
@@ -220,6 +274,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
               </button>
             )}
 
+            {/* Unified Portal / Log Out */}
+            <button
+              onClick={logoutUser}
+              title="Sign Out to Unified Onboarding Portal"
+              aria-label="Sign Out"
+              className="p-2 text-slate-600 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+
             {/* Primary Action Button: Role-aware */}
             {currentRole === 'admin' ? (
               <button
@@ -256,12 +320,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
             (
               [
                 { key: 'overview', label: 'Overview' },
+                { key: 'approvals', label: `Approvals (${pendingUsers.length})` },
                 { key: 'analytics', label: 'Analytics' },
                 { key: 'students', label: 'Students' },
                 { key: 'batch_entry', label: 'Mark Entry' },
                 { key: 'teachers_subjects', label: 'Staff & Subjects' },
                 { key: 'data_management', label: 'CSV' },
-                { key: 'settings', label: 'Password Settings' },
+                { key: 'settings', label: 'Password' },
               ] as const
             ).map((t) => (
               <button
@@ -285,6 +350,27 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
                 { key: 'batch_entry', label: 'Enter Marks' },
                 { key: 'analytics', label: 'Analytics' },
                 { key: 'students', label: 'Roster' },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key as any)}
+                className={`px-2.5 py-1 text-xs rounded-md whitespace-nowrap font-medium ${
+                  activeTab === t.key
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-semibold'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-300'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))
+          )}
+
+          {currentRole === 'student' && (
+            (
+              [
+                { key: 'students', label: 'Academic Report' },
+                { key: 'overview', label: 'Benchmarks' },
               ] as const
             ).map((t) => (
               <button

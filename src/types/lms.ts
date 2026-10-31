@@ -17,7 +17,24 @@ export interface GradeDefinition {
   description: string;
 }
 
-export type UserRole = 'admin' | 'teacher' | 'parent';
+export type UserRole = 'admin' | 'teacher' | 'student' | 'parent';
+
+export type UserStatus = 'pending' | 'active' | 'rejected';
+export type AssignedRole = 'unassigned' | 'teacher' | 'student' | 'admin';
+
+export interface LMSUser {
+  id: string; // Document ID / user ID
+  name: string;
+  fullName?: string;
+  email: string;
+  phone: string;
+  password?: string;
+  status: UserStatus;
+  assignedRole: AssignedRole;
+  indexNumber?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type MarkSubmissionStatus = 'draft' | 'submitted' | 'approved';
 
