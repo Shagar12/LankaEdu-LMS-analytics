@@ -123,11 +123,105 @@ service cloud.firestore {
         && (!('marks' in data) || data.marks is map);
     }
 
+    // Validation helper for Student records and term marks
+    function isValidStudentDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'indexNumber', 'fullName', 'grade', 'division', 
+          'gender', 'medium', 'attendanceRate', 'guardianName', 'contactNumber', 
+          'terms', 'rankings', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.indexNumber is string
+        && data.indexNumber.size() >= 1
+        && data.fullName is string
+        && data.fullName.size() >= 1
+        && data.fullName.size() <= 120
+        && data.grade is number
+        && data.division in ['A', 'B', 'C']
+        && (!('gender' in data) || data.gender in ['Male', 'Female'])
+        && (!('medium' in data) || data.medium in ['Sinhala', 'Tamil', 'English'])
+        && (!('attendanceRate' in data) || data.attendanceRate is number)
+        && (!('guardianName' in data) || data.guardianName is string)
+        && (!('contactNumber' in data) || data.contactNumber is string)
+        && (!('terms' in data) || data.terms is map)
+        && (!('rankings' in data) || data.rankings is map)
+        && (!('createdAt' in data) || data.createdAt is string)
+        && (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    // Students collection (Student roster and term marks across devices)
+    match /students/{studentId} {
+      allow read: if true;
+      allow create, update: if isValidStudentDoc(request.resource.data)
+        && request.resource.data.id == studentId;
+      allow delete: if true;
+    }
+
     // Mark Submissions collection (offline mark entry sync)
     match /mark_submissions/{submissionId} {
       allow read: if true;
       allow create, update: if isValidMarkSubmissionDoc(request.resource.data)
         && request.resource.data.id == submissionId;
+      allow delete: if true;
+    }
+
+    // Validation helper for Curriculum Subjects
+    function isValidSubjectDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'name', 'shortName', 'code', 'applicableGrades', 
+          'category', 'assignedTeacherId', 'description', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.name is string
+        && data.name.size() >= 1
+        && data.shortName is string
+        && data.code is string
+        && data.applicableGrades is list
+        && data.category in ['core', 'basket', 'al_stream']
+        && (!('assignedTeacherId' in data) || data.assignedTeacherId is string)
+        && (!('description' in data) || data.description is string)
+        && (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    // Subjects collection (Curriculum subjects synced across devices)
+    match /subjects/{subjectId} {
+      allow read: if true;
+      allow create, update: if isValidSubjectDoc(request.resource.data)
+        && request.resource.data.id == subjectId;
+      allow delete: if true;
+    }
+
+    // Validation helper for System & RBAC Audit Logs
+    function isValidAuditLogDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'timestamp', 'actorName', 'actorRole', 'actorIdentifier', 
+          'action', 'actionTitle', 'details', 'targetEntity', 'grade', 
+          'division', 'term', 'severity', 'deviceInfo'
+        ])
+        && data.id is string
+        && data.id.size() >= 1
+        && data.timestamp is string
+        && data.actorName is string
+        && data.actorRole in ['teacher', 'parent', 'student', 'admin', 'system']
+        && data.action is string
+        && data.actionTitle is string
+        && data.details is string
+        && data.severity in ['info', 'success', 'warning', 'critical']
+        && (!('actorIdentifier' in data) || data.actorIdentifier is string)
+        && (!('targetEntity' in data) || data.targetEntity is string)
+        && (!('grade' in data) || data.grade is number)
+        && (!('division' in data) || data.division is string)
+        && (!('term' in data) || data.term is number)
+        && (!('deviceInfo' in data) || data.deviceInfo is string);
+    }
+
+    // Audit Logs collection (Real-time activity tracking for teachers, parents, and admins)
+    match /audit_logs/{logId} {
+      allow read: if true;
+      allow create, update: if isValidAuditLogDoc(request.resource.data)
+        && request.resource.data.id == logId;
       allow delete: if true;
     }
 
@@ -137,3 +231,4 @@ service cloud.firestore {
     }
   }
 }
+

@@ -15,10 +15,12 @@ import {
   LMSUser,
   UserStatus,
   AssignedRole,
+  AuditLogEntry,
 } from '../types/lms';
 import { generateInitialMockStudents } from '../data/mockData';
 import { INITIAL_MOCK_TEACHERS } from '../data/mockTeachers';
 import { INITIAL_MOCK_USERS } from '../data/mockUsers';
+import { INITIAL_MOCK_AUDIT_LOGS } from '../data/mockAuditLogs';
 import {
   ALL_CURRICULUM_SUBJECTS,
   calculateTermRecord,
@@ -44,6 +46,19 @@ import {
   isOfflinePersistenceActive,
   syncMarkSubmissionToFirestore,
   subscribeToMarkSubmissions,
+  syncStudentToFirestore,
+  deleteStudentFromFirestore,
+  subscribeToStudents,
+  seedInitialStudentsToFirestore,
+  searchStudentByIndexFromFirestore,
+  deleteTeacherFromFirestore,
+  syncSubjectToFirestore,
+  deleteSubjectFromFirestore,
+  subscribeToSubjects,
+  seedInitialSubjectsToFirestore,
+  syncAuditLogToFirestore,
+  subscribeToAuditLogs,
+  seedInitialAuditLogsToFirestore,
 } from '../lib/firebase';
 import {
   computeSha256Hash,
@@ -97,7 +112,7 @@ interface LMSContextType {
   selectedGrade: GradeLevel;
   selectedDivision: Division;
   selectedTerm: TermNumber;
-  activeTab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals';
+  activeTab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals' | 'audit_trail';
   searchQuery: string;
   selectedStudentId: string | null;
   theme: 'light' | 'dark';
@@ -113,10 +128,13 @@ interface LMSContextType {
     totalStudents: number;
   }[];
   currentClassTeacher: Teacher | undefined;
+  auditLogs: AuditLogEntry[];
+  logAuditEvent: (event: Omit<AuditLogEntry, 'id' | 'timestamp'>) => void;
+  clearAuditLogs: () => void;
   setSelectedGrade: (grade: GradeLevel) => void;
   setSelectedDivision: (division: Division) => void;
   setSelectedTerm: (term: TermNumber) => void;
-  setActiveTab: (tab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals') => void;
+  setActiveTab: (tab: 'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals' | 'audit_trail') => void;
   setSearchQuery: (query: string) => void;
   setSelectedStudentId: (id: string | null) => void;
   toggleTheme: () => void;
@@ -131,6 +149,7 @@ interface LMSContextType {
     attendanceRate: number;
     guardianName: string;
     contactNumber: string;
+    customIndexNumber?: string;
   }) => string;
   updateStudent: (studentId: string, updates: Partial<Student>) => void;
   deleteStudent: (studentId: string) => void;
@@ -497,9 +516,32 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(10);
   const [selectedDivision, setSelectedDivision] = useState<Division>('A');
   const [selectedTerm, setSelectedTerm] = useState<TermNumber>(1);
-  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'analytics' | 'students' | 'batch_entry' | 'teachers_subjects' | 'data_management' | 'settings' | 'approvals' | 'audit_trail'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  // System & RBAC Audit Trail state
+  const AUDIT_LOGS_STORAGE_KEY = 'lankaedu_audit_logs';
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
+    try {
+      const stored = localStorage.getItem(AUDIT_LOGS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed reading audit logs from localStorage', e);
+    }
+    return INITIAL_MOCK_AUDIT_LOGS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(AUDIT_LOGS_STORAGE_KEY, JSON.stringify(auditLogs));
+    } catch (e) {
+      console.error('Failed writing audit logs to localStorage', e);
+    }
+  }, [auditLogs]);
 
   // 1. Teachers list
   const [teachers, setTeachers] = useState<Teacher[]>(() => {
@@ -574,12 +616,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [students]);
 
-  // Real-time Firestore synchronization for Admin, Faculty credentials, User Registrations, and Mark Submissions across all devices
+  // Real-time Firestore synchronization for Admin, Faculty credentials, User Registrations, Students roster, and Mark Submissions across all devices
   useEffect(() => {
     let unsubscribeAdmin: (() => void) | undefined;
     let unsubscribeTeachers: (() => void) | undefined;
     let unsubscribeUsers: (() => void) | undefined;
     let unsubscribeMarkSubmissions: (() => void) | undefined;
+    let unsubscribeStudents: (() => void) | undefined;
+    let unsubscribeSubjects: (() => void) | undefined;
+    let unsubscribeAuditLogs: (() => void) | undefined;
 
     testFirestoreConnection().then((connected) => {
       setIsFirebaseConnected(connected);
@@ -734,6 +779,61 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         }
       });
+
+      // 5. Subscribe to Students collection in real time across all devices (marks, new students, rank calculations)
+      unsubscribeStudents = subscribeToStudents((remoteStudents) => {
+        if (remoteStudents.length > 0) {
+          const ranked = assignRanks(remoteStudents);
+          setStudents(ranked);
+          try {
+            localStorage.setItem(STUDENTS_STORAGE_KEY, JSON.stringify(ranked));
+          } catch (e) {
+            console.error('Failed writing students to storage', e);
+          }
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          // If Firestore students collection is completely empty, seed initial baseline students so all devices start with identical records
+          const initial = generateInitialMockStudents();
+          seedInitialStudentsToFirestore(initial).catch((err) =>
+            console.warn('Initial students seed note:', err)
+          );
+        }
+      });
+
+      // 6. Subscribe to Curriculum Subjects collection in real time across all devices
+      unsubscribeSubjects = subscribeToSubjects((remoteSubjects) => {
+        if (remoteSubjects.length > 0) {
+          setSubjects(remoteSubjects);
+          try {
+            localStorage.setItem(SUBJECTS_STORAGE_KEY, JSON.stringify(remoteSubjects));
+          } catch (e) {
+            console.error('Failed writing subjects to storage', e);
+          }
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          // If Firestore subjects collection is empty, seed initial baseline subjects
+          seedInitialSubjectsToFirestore(ALL_CURRICULUM_SUBJECTS).catch((err) =>
+            console.warn('Initial subjects seed note:', err)
+          );
+        }
+      });
+
+      // 7. Subscribe to Audit Trail Logs collection in real time across all devices
+      unsubscribeAuditLogs = subscribeToAuditLogs((remoteLogs) => {
+        if (remoteLogs.length > 0) {
+          setAuditLogs(remoteLogs);
+          try {
+            localStorage.setItem(AUDIT_LOGS_STORAGE_KEY, JSON.stringify(remoteLogs));
+          } catch (e) {
+            console.error('Failed writing audit logs to storage', e);
+          }
+          setLastFirebaseSync(new Date().toLocaleTimeString());
+        } else {
+          seedInitialAuditLogsToFirestore(INITIAL_MOCK_AUDIT_LOGS).catch((err) =>
+            console.warn('Initial audit logs seed note:', err)
+          );
+        }
+      });
     });
 
     return () => {
@@ -741,6 +841,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (unsubscribeTeachers) unsubscribeTeachers();
       if (unsubscribeUsers) unsubscribeUsers();
       if (unsubscribeMarkSubmissions) unsubscribeMarkSubmissions();
+      if (unsubscribeStudents) unsubscribeStudents();
+      if (unsubscribeSubjects) unsubscribeSubjects();
+      if (unsubscribeAuditLogs) unsubscribeAuditLogs();
     };
   }, []);
 
@@ -749,6 +852,47 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!loggedTeacherId) return null;
     return teachers.find((t) => t.id === loggedTeacherId || t.employeeId === loggedTeacherId) || null;
   }, [teachers, loggedTeacherId]);
+
+  // Record Audit Trail Event across Firebase and PostgreSQL Cloud SQL
+  const logAuditEvent = (event: Omit<AuditLogEntry, 'id' | 'timestamp'>) => {
+    const id = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const newEntry: AuditLogEntry = {
+      ...event,
+      id,
+      timestamp: new Date().toISOString(),
+      deviceInfo:
+        event.deviceInfo ||
+        (typeof navigator !== 'undefined'
+          ? isCurrentDeviceMobile
+            ? 'Mobile Device'
+            : 'Desktop Web Browser'
+          : 'System'),
+    };
+
+    setAuditLogs((prev) => [newEntry, ...prev.filter((l) => l.id !== id)]);
+
+    // Sync to Firestore in real time so all admin instances can watch logs live
+    syncAuditLogToFirestore(newEntry).catch((err) =>
+      console.warn('Firestore audit log sync note:', err)
+    );
+
+    // Also send to Cloud SQL relational database backend
+    fetch('/api/audit-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: newEntry.action,
+        userEmail: newEntry.actorIdentifier || newEntry.actorName,
+        details: `${newEntry.actionTitle}: ${newEntry.details}`,
+        ipAddress: 'Client Session',
+      }),
+    }).catch((err) => console.warn('Cloud SQL audit log notice:', err));
+  };
+
+  const clearAuditLogs = () => {
+    setAuditLogs([]);
+    localStorage.removeItem(AUDIT_LOGS_STORAGE_KEY);
+  };
 
   // Current curriculum subjects for selected grade
   const currentSubjects = useMemo(() => {
@@ -922,6 +1066,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         });
     });
 
+    logAuditEvent({
+      actorName: 'Master Administrator',
+      actorRole: 'admin',
+      action: 'ADMIN_PASSWORD_CHANGE',
+      actionTitle: 'Master Password Updated',
+      details: 'Administrator updated system master password. Remote session revocation triggered across all active devices.',
+      severity: 'warning',
+    });
+
     return {
       success: true,
       message: 'Administrator master password has been successfully updated and synced to Firebase Firestore! All devices immediately require the new password.',
@@ -959,6 +1112,15 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setIsFirebaseSyncing(false);
           console.warn('Firebase reset sync warning:', err);
         });
+    });
+
+    logAuditEvent({
+      actorName: 'Master Administrator',
+      actorRole: 'admin',
+      action: 'ADMIN_PASSWORD_CHANGE',
+      actionTitle: 'Master Password Reset to Default',
+      details: 'Master administrator password reset to factory default (admin123).',
+      severity: 'critical',
     });
   };
 
@@ -1170,6 +1332,17 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (e) {
       console.warn('Signup Firestore sync note:', e);
     }
+
+    logAuditEvent({
+      actorName: cleanName,
+      actorRole: 'student',
+      actorIdentifier: cleanEmail,
+      action: 'USER_REGISTRATION',
+      actionTitle: 'New User Registered',
+      details: `User registration submitted by ${cleanName} (${cleanEmail}, Phone: ${cleanPhone}). Account marked as pending administrative approval.`,
+      targetEntity: `${cleanName} (${cleanEmail})`,
+      severity: 'info',
+    });
 
     return {
       success: true,
@@ -1390,6 +1563,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }),
       }).catch((err) => console.warn('Backend role update notice:', err));
 
+      logAuditEvent({
+        actorName: 'Master Administrator',
+        actorRole: 'admin',
+        action: 'USER_ROLE_ASSIGNED',
+        actionTitle: 'Assigned User as Teacher',
+        details: `Approved applicant registration for ${target.name} (${target.email}) and assigned active Teacher role with faculty portal permissions.`,
+        targetEntity: `${target.name} (${target.email})`,
+        severity: 'success',
+      });
+
       return {
         success: true,
         message: `Successfully approved and assigned ${target.name} as Teacher!`,
@@ -1437,13 +1620,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         attendanceRate: 95,
         guardianName: 'Parent / Guardian',
         contactNumber: target.phone || '+94 77 123 4567',
-      });
-      setStudents((prev) => {
-        const last = prev[prev.length - 1];
-        if (last) {
-          return prev.map((s) => (s.id === last.id ? { ...s, indexNumber: cleanIndex } : s));
-        }
-        return prev;
+        customIndexNumber: cleanIndex,
       });
     }
 
@@ -1460,6 +1637,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           indexNumber: cleanIndex,
         }),
       }).catch((err) => console.warn('Backend role update notice:', err));
+
+      logAuditEvent({
+        actorName: 'Master Administrator',
+        actorRole: 'admin',
+        action: 'USER_ROLE_ASSIGNED',
+        actionTitle: 'Assigned User as Student',
+        details: `Approved registration for ${target.name} (${target.email}) and assigned Student role linked to Examination Index ${cleanIndex}.`,
+        targetEntity: `${target.name} (${cleanIndex})`,
+        severity: 'success',
+      });
 
       return {
         success: true,
@@ -1594,6 +1781,20 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         notes: newSubmission.notes,
       }),
     }).catch((err) => console.warn('PostgreSQL mark submission sync note:', err));
+
+    logAuditEvent({
+      actorName: teacherName,
+      actorRole: currentRole === 'admin' ? 'admin' : 'teacher',
+      actorIdentifier: teacherId,
+      action: 'MARK_SUBMISSION',
+      actionTitle: instantSaveMode ? 'Marks Published (Instant Save)' : 'Marks Submitted for Approval',
+      details: `${teacherName} submitted ${Object.keys(subjectMarks).length} student evaluations for Grade ${grade}-${division} Term ${term}. Notes: "${newSubmission.notes}"`,
+      targetEntity: `Grade ${grade}-${division} (${subjectId})`,
+      grade,
+      division,
+      term,
+      severity: 'info',
+    });
   };
 
   const approveMarksSubmission = (submissionId: string) => {
@@ -1606,6 +1807,18 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncMarkSubmissionToFirestore(target).catch((err) =>
           console.warn('Firestore mark submission approval sync note:', err)
         );
+        logAuditEvent({
+          actorName: 'Master Administrator',
+          actorRole: 'admin',
+          action: 'MARK_APPROVAL',
+          actionTitle: 'Faculty Mark Submission Approved',
+          details: `Admin certified mark submissions for Grade ${target.grade}-${target.division} (Term ${target.term}) submitted by ${target.teacherName}.`,
+          targetEntity: `Grade ${target.grade}-${target.division}`,
+          grade: target.grade,
+          division: target.division,
+          term: target.term,
+          severity: 'success',
+        });
       }
       return updated;
     });
@@ -1658,6 +1871,9 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const deleteTeacher = (id: string) => {
     setTeachers((prev) => prev.filter((t) => t.id !== id));
+    deleteTeacherFromFirestore(id).catch((err) =>
+      console.warn('Firestore teacher deletion sync warning:', err)
+    );
   };
 
   const assignTeacherToSubject = (
@@ -1709,7 +1925,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
 
-  // Subject methods
+  // Subject methods with real-time Firestore synchronization
   const addSubject = (data: {
     name: string;
     shortName: string;
@@ -1723,10 +1939,28 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       ...data,
     };
     setSubjects((prev) => [...prev, newSub]);
+    syncSubjectToFirestore(newSub).catch((err) =>
+      console.warn('Firestore subject add sync warning:', err)
+    );
   };
 
   const updateSubject = (id: string, updates: Partial<SubjectConfig>) => {
-    setSubjects((prev) => prev.map((s) => (s.id === id ? { ...s, ...updates } : s)));
+    let targetUpdated: SubjectConfig | null = null;
+    setSubjects((prev) => {
+      const next = prev.map((s) => {
+        if (s.id !== id) return s;
+        const updated = { ...s, ...updates };
+        targetUpdated = updated;
+        return updated;
+      });
+      return next;
+    });
+
+    if (targetUpdated) {
+      syncSubjectToFirestore(targetUpdated).catch((err) =>
+        console.warn('Firestore subject update sync warning:', err)
+      );
+    }
   };
 
   const deleteSubject = (id: string) => {
@@ -1737,46 +1971,98 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         assignments: t.assignments.filter((a) => a.subjectId !== id),
       }))
     );
+    deleteSubjectFromFirestore(id).catch((err) =>
+      console.warn('Firestore subject deletion sync warning:', err)
+    );
   };
 
-  // Update marks for an individual student in a term
+  // Update marks for an individual student in a term with real-time Firestore persistence
   const updateStudentTermMarks = (studentId: string, term: TermNumber, marks: Record<string, number>) => {
+    let targetUpdatedStudent: Student | null = null;
     setStudents((prev) => {
       const next = prev.map((s) => {
         if (s.id !== studentId) return s;
         const newRecord = calculateTermRecord(term, marks);
-        return {
+        const updated = {
           ...s,
           terms: {
             ...s.terms,
             [term]: newRecord,
           },
         };
+        targetUpdatedStudent = updated;
+        return updated;
       });
       return assignRanks(next);
     });
+
+    if (targetUpdatedStudent) {
+      syncStudentToFirestore(targetUpdatedStudent).catch((err) =>
+        console.warn('Firestore student marks sync note:', err)
+      );
+      const studentObj = targetUpdatedStudent as Student;
+      logAuditEvent({
+        actorName: currentTeacher?.fullName || (isAdmin ? 'School Administrator' : 'Academic Staff'),
+        actorRole: currentRole === 'admin' ? 'admin' : 'teacher',
+        actorIdentifier: currentTeacher?.employeeId || currentTeacher?.email || (isAdmin ? 'Admin' : undefined),
+        action: 'MARK_ENTRY',
+        actionTitle: 'Term Marks Updated',
+        details: `Updated Term ${term} marks for student ${studentObj.fullName} (Index: ${studentObj.indexNumber}, Grade ${studentObj.grade}-${studentObj.division}). Total: ${studentObj.terms[term]?.totalMarks}, Average: ${studentObj.terms[term]?.average}%`,
+        targetEntity: `${studentObj.fullName} (${studentObj.indexNumber})`,
+        grade: studentObj.grade,
+        division: studentObj.division,
+        term,
+        severity: 'info',
+      });
+    }
   };
 
-  // Batch update marks across students in a class
+  // Batch update marks across students in a class with real-time Firestore persistence
   const batchUpdateClassMarks = (term: TermNumber, updates: Record<string, Record<string, number>>) => {
+    const updatedList: Student[] = [];
     setStudents((prev) => {
       const next = prev.map((s) => {
         if (!updates[s.id]) return s;
         const mergedMarks = { ...(s.terms[term]?.marks || {}), ...updates[s.id] };
         const newRecord = calculateTermRecord(term, mergedMarks);
-        return {
+        const updated = {
           ...s,
           terms: {
             ...s.terms,
             [term]: newRecord,
           },
         };
+        updatedList.push(updated);
+        return updated;
       });
       return assignRanks(next);
     });
+
+    // Synchronize every updated student document to Firestore
+    updatedList.forEach((st) => {
+      syncStudentToFirestore(st).catch((err) =>
+        console.warn('Firestore batch mark sync note:', err)
+      );
+    });
+
+    if (updatedList.length > 0) {
+      logAuditEvent({
+        actorName: currentTeacher?.fullName || (isAdmin ? 'School Administrator' : 'Subject Teacher'),
+        actorRole: currentRole === 'admin' ? 'admin' : 'teacher',
+        actorIdentifier: currentTeacher?.employeeId || currentTeacher?.email || (isAdmin ? 'Admin' : undefined),
+        action: 'MARK_ENTRY',
+        actionTitle: 'Batch Mark Entry Saved',
+        details: `Updated and calculated marks in bulk for ${updatedList.length} student(s) in Grade ${selectedGrade}-${selectedDivision} (Term ${term}).`,
+        targetEntity: `Grade ${selectedGrade}-${selectedDivision}`,
+        grade: selectedGrade,
+        division: selectedDivision,
+        term,
+        severity: 'success',
+      });
+    }
   };
 
-  // Add new student
+  // Add new student with real-time Firestore persistence and immediate cross-device index indexing
   const addNewStudent = (data: {
     fullName: string;
     grade: GradeLevel;
@@ -1786,11 +2072,14 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     attendanceRate: number;
     guardianName: string;
     contactNumber: string;
+    customIndexNumber?: string;
   }) => {
     const applicableSubjects = subjects.filter((s) => s.applicableGrades.includes(data.grade));
     const idNum = Math.floor(1000 + Math.random() * 9000);
     const newId = `LK-${data.grade}${data.division}-${idNum}`;
-    const newIndex = `IDX-${data.grade * 1000 + (students.length + 1)}`;
+    const newIndex = data.customIndexNumber
+      ? data.customIndexNumber.trim().toUpperCase()
+      : `IDX-${data.grade * 1000 + (students.length + 1)}`;
 
     const initialMarks: Record<string, number> = {};
     applicableSubjects.forEach((sub) => {
@@ -1816,28 +2105,86 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
 
     setStudents((prev) => assignRanks([...prev, newStudent]));
+
+    // Synchronize new student to Firestore so Parent Portal on any other device can find it instantly
+    syncStudentToFirestore(newStudent).catch((err) =>
+      console.warn('Firestore new student sync note:', err)
+    );
+
+    logAuditEvent({
+      actorName: isAdmin ? 'Master Administrator' : 'Academic Registrar',
+      actorRole: 'admin',
+      action: 'STUDENT_ENROLL',
+      actionTitle: 'Student Enrolled',
+      details: `Enrolled student ${data.fullName} with Index Number ${newIndex} into Grade ${data.grade}-${data.division}. Guardian: ${data.guardianName} (${data.contactNumber}).`,
+      targetEntity: `${data.fullName} (${newIndex})`,
+      grade: data.grade,
+      division: data.division,
+      severity: 'success',
+    });
+
     return newId;
   };
 
   // Update existing student details (Full name, index number, division, attendance, etc.)
   const updateStudent = (studentId: string, updates: Partial<Student>) => {
+    let targetUpdatedStudent: Student | null = null;
     setStudents((prev) => {
       const next = prev.map((s) => {
         if (s.id !== studentId) return s;
-        return {
+        const updated = {
           ...s,
           ...updates,
+          indexNumber: updates.indexNumber ? updates.indexNumber.trim().toUpperCase() : s.indexNumber,
         };
+        targetUpdatedStudent = updated;
+        return updated;
       });
       return assignRanks(next);
     });
+
+    if (targetUpdatedStudent) {
+      syncStudentToFirestore(targetUpdatedStudent).catch((err) =>
+        console.warn('Firestore student update sync note:', err)
+      );
+      const studentObj = targetUpdatedStudent as Student;
+      logAuditEvent({
+        actorName: isAdmin ? 'Master Administrator' : 'Staff',
+        actorRole: 'admin',
+        action: 'STUDENT_UPDATE',
+        actionTitle: 'Student Record Updated',
+        details: `Updated details for ${studentObj.fullName} (Index: ${studentObj.indexNumber}, Grade ${studentObj.grade}-${studentObj.division}).`,
+        targetEntity: `${studentObj.fullName} (${studentObj.indexNumber})`,
+        grade: studentObj.grade,
+        division: studentObj.division,
+        severity: 'info',
+      });
+    }
   };
 
-  // Delete student
+  // Delete student with Firestore removal
   const deleteStudent = (studentId: string) => {
+    const deletedStudent = students.find((s) => s.id === studentId);
     setStudents((prev) => assignRanks(prev.filter((s) => s.id !== studentId)));
     if (selectedStudentId === studentId) {
       setSelectedStudentId(null);
+    }
+    deleteStudentFromFirestore(studentId).catch((err) =>
+      console.warn('Firestore student deletion sync note:', err)
+    );
+
+    if (deletedStudent) {
+      logAuditEvent({
+        actorName: isAdmin ? 'Master Administrator' : 'Staff',
+        actorRole: 'admin',
+        action: 'STUDENT_DELETE',
+        actionTitle: 'Student Record Deleted',
+        details: `Permanently removed student ${deletedStudent.fullName} (${deletedStudent.indexNumber}) from Grade ${deletedStudent.grade}-${deletedStudent.division}.`,
+        targetEntity: `${deletedStudent.fullName} (${deletedStudent.indexNumber})`,
+        grade: deletedStudent.grade,
+        division: deletedStudent.division,
+        severity: 'critical',
+      });
     }
   };
 
@@ -1903,7 +2250,16 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
-    setStudents(assignRanks(updated));
+    const ranked = assignRanks(updated);
+    setStudents(ranked);
+
+    // Real-time Firestore synchronization for all imported/updated students
+    updated.forEach((st) => {
+      syncStudentToFirestore(st).catch((err) =>
+        console.warn('Firestore bulk import student sync note:', err)
+      );
+    });
+
     return { successCount, errors };
   };
 
@@ -2009,6 +2365,10 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         assignUserAsStudent,
         rejectUserRegistration,
         refreshCurrentUserStatus,
+        // System & RBAC Audit Trail Activity Log
+        auditLogs,
+        logAuditEvent,
+        clearAuditLogs,
       }}
     >
       {children}

@@ -11,6 +11,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose }) => 
   const { selectedGrade, selectedDivision, addNewStudent, setSelectedStudentId } = useLMS();
 
   const [fullName, setFullName] = useState('');
+  const [customIndexNumber, setCustomIndexNumber] = useState('');
   const [grade, setGrade] = useState<GradeLevel>(selectedGrade);
   const [division, setDivision] = useState<Division>(selectedDivision);
   const [gender, setGender] = useState<'Male' | 'Female'>('Male');
@@ -32,6 +33,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose }) => 
       attendanceRate: Math.min(100, Math.max(0, attendanceRate)),
       guardianName: guardianName.trim() || 'Parent/Guardian',
       contactNumber: contactNumber.trim() || '+94 77 123 4567',
+      customIndexNumber: customIndexNumber.trim() ? customIndexNumber.trim().toUpperCase() : undefined,
     });
 
     onClose();
@@ -80,6 +82,25 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose }) => 
               onChange={(e) => setFullName(e.target.value)}
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Examination Index Number (Optional)
+              </label>
+              <span className="text-[10px] text-slate-400">Auto-generated if left blank</span>
+            </div>
+            <input
+              type="text"
+              placeholder="e.g. IDX-10250 (used for Parent Portal lookup)"
+              value={customIndexNumber}
+              onChange={(e) => setCustomIndexNumber(e.target.value)}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono uppercase"
+            />
+            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1">
+              ✓ Synchronizes to Firestore immediately so parents on another device can enter this exact Index Number to view marks.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

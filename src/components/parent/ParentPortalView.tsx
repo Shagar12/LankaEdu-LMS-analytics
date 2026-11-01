@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { TermNumber, GradeLetter, Student } from '../../types/lms';
 import { SRI_LANKAN_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
 import '../charts/ChartSetup';
 import { Bar, Radar, Line } from 'react-chartjs-2';
+import { searchStudentByIndexFromFirestore } from '../../lib/firebase';
 import {
   Search,
   Users,
@@ -19,6 +20,9 @@ import {
   Phone,
   HelpCircle,
   FileText,
+  Loader2,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 export const ParentPortalView: React.FC = () => {
@@ -30,6 +34,7 @@ export const ParentPortalView: React.FC = () => {
     getTeacherForSubject,
     getClassTeacher,
     theme,
+    logAuditEvent,
   } = useLMS();
 
   const isDark = theme === 'dark';
@@ -48,8 +53,20 @@ export const ParentPortalView: React.FC = () => {
   });
   const [hasSearched, setHasSearched] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [isSearchingServer, setIsSearchingServer] = useState(false);
 
-  const handleSearch = (e?: React.FormEvent) => {
+  // Dynamically resolve the freshest student data from real-time Firestore-synced students array
+  const currentStudent = useMemo(() => {
+    if (!activeStudent) return null;
+    const match = students.find(
+      (s) =>
+        s.id === activeStudent.id ||
+        s.indexNumber.toUpperCase().trim() === activeStudent.indexNumber.toUpperCase().trim()
+    );
+    return match || activeStudent;
+  }, [students, activeStudent]);
+
+  const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMessage('');
     const query = searchIndex.trim().toUpperCase();
@@ -59,40 +76,116 @@ export const ParentPortalView: React.FC = () => {
       return;
     }
 
-    const found = students.find(
-      (s) => s.indexNumber.toUpperCase() === query || s.id.toUpperCase() === query
+    // 1. Search in live synced memory students
+    const localFound = students.find(
+      (s) =>
+        s.indexNumber.toUpperCase().trim() === query ||
+        s.id.toUpperCase().trim() === query
     );
 
-    if (found) {
-      setActiveStudent(found);
+    if (localFound) {
+      setActiveStudent(localFound);
       setHasSearched(true);
-    } else {
-      setErrorMessage(`No student record found with Index Number or ID "${query}". Please check the index number on the student's admission card.`);
+      logAuditEvent({
+        actorName: `Parent / Guardian of ${localFound.fullName}`,
+        actorRole: 'parent',
+        actorIdentifier: `Parent (${localFound.indexNumber})`,
+        action: 'STUDENT_SEARCH',
+        actionTitle: 'Parent Portal Student Lookup',
+        details: `Parent queried academic progress report for Examination Index ${localFound.indexNumber} (${localFound.fullName}, Grade ${localFound.grade}-${localFound.division}).`,
+        targetEntity: `${localFound.fullName} (${localFound.indexNumber})`,
+        grade: localFound.grade,
+        division: localFound.division,
+        term: selectedTerm,
+        severity: 'info',
+      });
+      return;
+    }
+
+    // 2. Direct server fallback: Query Firestore directly across devices in case of network transit
+    setIsSearchingServer(true);
+    try {
+      const serverFound = await searchStudentByIndexFromFirestore(query);
+      if (serverFound) {
+        setActiveStudent(serverFound);
+        setHasSearched(true);
+        logAuditEvent({
+          actorName: `Parent / Guardian of ${serverFound.fullName}`,
+          actorRole: 'parent',
+          actorIdentifier: `Parent (${serverFound.indexNumber})`,
+          action: 'STUDENT_SEARCH',
+          actionTitle: 'Parent Portal Student Lookup (Remote Query)',
+          details: `Parent queried remote academic progress for Examination Index ${serverFound.indexNumber} (${serverFound.fullName}, Grade ${serverFound.grade}-${serverFound.division}).`,
+          targetEntity: `${serverFound.fullName} (${serverFound.indexNumber})`,
+          grade: serverFound.grade,
+          division: serverFound.division,
+          term: selectedTerm,
+          severity: 'info',
+        });
+      } else {
+        setErrorMessage(
+          `No student record found with Index Number or ID "${query}". Please check the examination index number on the student's admission card.`
+        );
+      }
+    } catch (err) {
+      setErrorMessage(
+        `No student record found with Index Number or ID "${query}". Please check the examination index number on the student's admission card.`
+      );
+    } finally {
+      setIsSearchingServer(false);
     }
   };
 
   const handleSelectSample = (idx: string) => {
     setSearchIndex(idx);
     setErrorMessage('');
-    const found = students.find((s) => s.indexNumber === idx);
+    const found = students.find((s) => s.indexNumber.toUpperCase() === idx.toUpperCase());
     if (found) {
       setActiveStudent(found);
       setHasSearched(true);
+      logAuditEvent({
+        actorName: `Parent / Guardian of ${found.fullName}`,
+        actorRole: 'parent',
+        actorIdentifier: `Parent (${found.indexNumber})`,
+        action: 'STUDENT_SEARCH',
+        actionTitle: 'Parent Portal Student Lookup',
+        details: `Parent viewed quick sample progress card for ${found.fullName} (${found.indexNumber}, Grade ${found.grade}-${found.division}).`,
+        targetEntity: `${found.fullName} (${found.indexNumber})`,
+        grade: found.grade,
+        division: found.division,
+        term: selectedTerm,
+        severity: 'info',
+      });
     }
   };
 
   const handlePrint = () => {
+    if (currentStudent) {
+      logAuditEvent({
+        actorName: `Parent / Guardian of ${currentStudent.fullName}`,
+        actorRole: 'parent',
+        actorIdentifier: `Parent (${currentStudent.indexNumber})`,
+        action: 'REPORT_PRINT',
+        actionTitle: 'Term Progress Card Printed',
+        details: `Official Term ${selectedTerm} Progress Report Card downloaded / sent to print for student ${currentStudent.fullName} (${currentStudent.indexNumber}, Grade ${currentStudent.grade}-${currentStudent.division}).`,
+        targetEntity: `${currentStudent.fullName} (${currentStudent.indexNumber})`,
+        grade: currentStudent.grade,
+        division: currentStudent.division,
+        term: selectedTerm,
+        severity: 'info',
+      });
+    }
     window.print();
   };
 
-  const currentTermRecord = activeStudent ? activeStudent.terms[selectedTerm] : null;
+  const currentTermRecord = currentStudent ? currentStudent.terms[selectedTerm] : null;
 
   // Subjects applicable for this student's grade
-  const applicableSubjects = activeStudent
-    ? subjects.filter((s) => s.applicableGrades.includes(activeStudent.grade))
+  const applicableSubjects = currentStudent
+    ? subjects.filter((s) => s.applicableGrades.includes(currentStudent.grade))
     : [];
 
-  const classTeacher = activeStudent ? getClassTeacher(activeStudent.grade, activeStudent.division) : null;
+  const classTeacher = currentStudent ? getClassTeacher(currentStudent.grade, currentStudent.division) : null;
 
   // Visual Chart Data
   const chartLabels = applicableSubjects.map((s) => s.shortName);
@@ -103,7 +196,7 @@ export const ParentPortalView: React.FC = () => {
     labels: chartLabels,
     datasets: [
       {
-        label: `${activeStudent?.fullName || 'Student'} (Term Marks)`,
+        label: `${currentStudent?.fullName || 'Student'} (Term Marks)`,
         data: studentMarks,
         backgroundColor: 'rgba(99, 102, 241, 0.85)',
         borderColor: 'rgb(79, 70, 229)',
@@ -209,9 +302,9 @@ export const ParentPortalView: React.FC = () => {
       {
         label: 'Average Progression (%)',
         data: [
-          activeStudent?.terms[1]?.average ?? 0,
-          activeStudent?.terms[2]?.average ?? 0,
-          activeStudent?.terms[3]?.average ?? 0,
+          currentStudent?.terms[1]?.average ?? 0,
+          currentStudent?.terms[2]?.average ?? 0,
+          currentStudent?.terms[3]?.average ?? 0,
         ],
         borderColor: 'rgb(99, 102, 241)',
         backgroundColor: 'rgba(99, 102, 241, 0.1)',
@@ -271,7 +364,7 @@ export const ParentPortalView: React.FC = () => {
             </p>
           </div>
 
-          {activeStudent && (
+          {currentStudent && (
             <button
               onClick={handlePrint}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-xs transition-colors shrink-0"
@@ -297,11 +390,27 @@ export const ParentPortalView: React.FC = () => {
             </div>
             <button
               type="submit"
-              className="w-full sm:w-auto px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600 rounded-lg shadow-xs transition-colors shrink-0"
+              disabled={isSearchingServer}
+              className="w-full sm:w-auto px-5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-500 dark:hover:bg-amber-600 disabled:opacity-50 rounded-lg shadow-xs transition-colors shrink-0 flex items-center justify-center gap-1.5"
             >
-              Lookup Results
+              {isSearchingServer ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Searching Server...</span>
+                </>
+              ) : (
+                <span>Lookup Results</span>
+              )}
             </button>
           </form>
+
+          {/* Real-time synchronization notice */}
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 mt-2 font-medium">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Real-Time Cross-Device Sync Active: Any student added or marks updated in Admin mode on any device can immediately be searched here by Index Number.
+            </span>
+          </div>
 
           {errorMessage && (
             <div className="mt-2 text-xs text-red-600 dark:text-red-400 font-medium">
@@ -318,7 +427,7 @@ export const ParentPortalView: React.FC = () => {
                 type="button"
                 onClick={() => handleSelectSample(s.index)}
                 className={`px-2 py-0.5 rounded text-[11px] font-mono font-medium transition-colors border ${
-                  activeStudent?.indexNumber === s.index
+                  currentStudent?.indexNumber === s.index
                     ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200 border-amber-300 dark:border-amber-700 font-bold'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
                 }`}
@@ -331,19 +440,19 @@ export const ParentPortalView: React.FC = () => {
       </div>
 
       {/* Results Content */}
-      {activeStudent && (
+      {currentStudent && (
         <>
           {/* Student Profile Card & Term Selector */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex items-start gap-4">
                 <div className="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 font-bold text-base flex items-center justify-center shrink-0">
-                  {activeStudent.fullName.slice(0, 2).toUpperCase()}
+                  {currentStudent.fullName.slice(0, 2).toUpperCase()}
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                      {activeStudent.fullName}
+                      {currentStudent.fullName}
                     </h2>
                     {currentTermRecord?.isAllAs && (
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 flex items-center gap-1">
@@ -354,18 +463,18 @@ export const ParentPortalView: React.FC = () => {
                   </div>
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
                     <span className="font-mono font-bold text-slate-800 dark:text-slate-200">
-                      Index: {activeStudent.indexNumber}
+                      Index: {currentStudent.indexNumber}
                     </span>
                     <span>·</span>
-                    <span>Student ID: {activeStudent.id}</span>
+                    <span>Student ID: {currentStudent.id}</span>
                     <span>·</span>
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
-                      Grade {activeStudent.grade}-{activeStudent.division}
+                      Grade {currentStudent.grade}-{currentStudent.division}
                     </span>
                     <span>·</span>
-                    <span>Medium: {activeStudent.medium}</span>
+                    <span>Medium: {currentStudent.medium}</span>
                     <span>·</span>
-                    <span>Attendance: {activeStudent.attendanceRate}%</span>
+                    <span>Attendance: {currentStudent.attendanceRate}%</span>
                   </div>
                 </div>
               </div>
@@ -443,7 +552,7 @@ export const ParentPortalView: React.FC = () => {
                 <div className="text-xl font-bold font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
                   #{currentTermRecord?.rankInClass || 1}
                 </div>
-                <span className="text-[11px] text-slate-400">In Grade {activeStudent.grade}-{activeStudent.division}</span>
+                <span className="text-[11px] text-slate-400">In Grade {currentStudent.grade}-{currentStudent.division}</span>
               </div>
 
               <div className="bg-slate-50 dark:bg-slate-800/40 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
@@ -520,7 +629,7 @@ export const ParentPortalView: React.FC = () => {
                   {applicableSubjects.map((subject) => {
                     const mark = currentTermRecord?.marks[subject.id] ?? 0;
                     const gradeInfo = getGradeFromMark(mark);
-                    const teacher = getTeacherForSubject(subject.id, activeStudent.grade, activeStudent.division);
+                    const teacher = getTeacherForSubject(subject.id, currentStudent.grade, currentStudent.division);
 
                     return (
                       <tr key={subject.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors">
@@ -622,15 +731,15 @@ export const ParentPortalView: React.FC = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-md mb-6 text-xs">
               <div>
                 <span className="text-slate-500 block">Student Name:</span>
-                <span className="font-bold text-slate-900 text-sm">{activeStudent.fullName}</span>
+                <span className="font-bold text-slate-900 text-sm">{currentStudent.fullName}</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Index Number:</span>
-                <span className="font-mono font-bold text-slate-900">{activeStudent.indexNumber}</span>
+                <span className="font-mono font-bold text-slate-900">{currentStudent.indexNumber}</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Grade & Class:</span>
-                <span className="font-bold text-slate-900">Grade {activeStudent.grade}-{activeStudent.division}</span>
+                <span className="font-bold text-slate-900">Grade {currentStudent.grade}-{currentStudent.division}</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Class Teacher:</span>
@@ -640,7 +749,7 @@ export const ParentPortalView: React.FC = () => {
               </div>
               <div>
                 <span className="text-slate-500 block">Attendance:</span>
-                <span className="font-mono font-semibold text-slate-900">{activeStudent.attendanceRate}%</span>
+                <span className="font-mono font-semibold text-slate-900">{currentStudent.attendanceRate}%</span>
               </div>
               <div>
                 <span className="text-slate-500 block">Class Merit Position:</span>

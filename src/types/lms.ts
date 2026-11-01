@@ -150,3 +150,44 @@ export interface SubjectRanking {
   passRate: number;
   aRate: number;
 }
+
+export type AuditActorRole = 'teacher' | 'parent' | 'student' | 'admin' | 'system';
+
+export type AuditActionType =
+  | 'MARK_ENTRY'
+  | 'MARK_SUBMISSION'
+  | 'MARK_APPROVAL'
+  | 'STUDENT_SEARCH'
+  | 'REPORT_PRINT'
+  | 'ANALYTICS_VIEW'
+  | 'STUDENT_ENROLL'
+  | 'STUDENT_UPDATE'
+  | 'STUDENT_DELETE'
+  | 'TEACHER_ASSIGN'
+  | 'TEACHER_PASSWORD_CHANGE'
+  | 'USER_REGISTRATION'
+  | 'USER_ROLE_ASSIGNED'
+  | 'USER_LOGIN'
+  | 'USER_LOGOUT'
+  | 'ADMIN_PASSWORD_CHANGE'
+  | 'CSV_IMPORT';
+
+export type AuditSeverity = 'info' | 'success' | 'warning' | 'critical';
+
+export interface AuditLogEntry {
+  id: string; // Document ID e.g. "audit_1730000000000_abc"
+  timestamp: string; // ISO 8601 string
+  actorName: string; // e.g. "Mrs. Pushpa Kumarihamy", "Parent of IDX-10100", "Master Administrator"
+  actorRole: AuditActorRole; // 'teacher' | 'parent' | 'student' | 'admin' | 'system'
+  actorIdentifier?: string; // email, employeeId, or student index number
+  action: AuditActionType;
+  actionTitle: string; // Human readable short action title
+  details: string; // Descriptive details of what occurred
+  targetEntity?: string; // e.g. "Grade 10-A Mathematics", "IDX-10100 (Kavindu Perera)"
+  grade?: GradeLevel;
+  division?: Division;
+  term?: TermNumber;
+  severity: AuditSeverity;
+  deviceInfo?: string; // Browser / Device info e.g. "Mobile Web (Chrome)", "Desktop (Firefox)"
+}
+

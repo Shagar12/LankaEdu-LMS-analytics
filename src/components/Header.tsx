@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLMS } from '../context/LMSContext';
-import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key, UserCheck, LogOut, WifiOff, Cpu } from 'lucide-react';
+import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key, UserCheck, LogOut, WifiOff, Cpu, History } from 'lucide-react';
 import { RoleSwitcher } from './auth/RoleSwitcher';
 
 interface HeaderProps {
@@ -140,6 +140,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent, onOpenBootload
                     <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Default password in use"></span>
                   )}
                 </button>
+                <button
+                  onClick={() => setActiveTab('audit_trail')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+                    activeTab === 'audit_trail'
+                      ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-900 dark:text-rose-200 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                  title="Real-time Audit Trail: Live activity log of teachers, parents, and administrative events"
+                >
+                  <History className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
+                  <span>Audit Trail</span>
+                </button>
               </>
             )}
 
@@ -242,13 +254,21 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent, onOpenBootload
           {/* Zone 3: Role Switcher & Action controls */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Classroom Offline Resiliency Indicator */}
-            {!isOnline && (
+            {!isOnline ? (
               <span
                 className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800 animate-pulse"
                 title="Firestore enableIndexedDbPersistence: Offline cache active for classroom reliability"
               >
                 <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 <span>Offline (IndexedDB Active)</span>
+              </span>
+            ) : (
+              <span
+                className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80"
+                title="Real-Time Cloud Synchronization Active: All administrative changes, marks, and enrollments sync dynamically in real time across devices"
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="font-mono text-[11px] font-bold">Live Synced</span>
               </span>
             )}
 
@@ -352,6 +372,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent, onOpenBootload
                 { key: 'teachers_subjects', label: 'Staff & Subjects' },
                 { key: 'data_management', label: 'CSV' },
                 { key: 'settings', label: 'Password' },
+                { key: 'audit_trail', label: 'Audit Trail' },
               ] as const
             ).map((t) => (
               <button

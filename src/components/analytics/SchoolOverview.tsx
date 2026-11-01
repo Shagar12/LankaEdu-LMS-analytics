@@ -268,6 +268,27 @@ export const SchoolOverview: React.FC = () => {
             <span className="text-[11px] text-slate-400">{subjects.length} Registered Subjects</span>
           </div>
         </div>
+
+        {/* Real-time Cloud Broadcast Telemetry Bar */}
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              Live Cloud Synchronization Active
+            </span>
+            <span className="text-slate-400">·</span>
+            <span className="text-slate-500 dark:text-slate-400">
+              Admin enrollments, mark changes, and role approvals dynamically broadcast in real time across all devices.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-md border border-emerald-200 dark:border-emerald-800">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>Dual-Engine: Firestore + PostgreSQL 16</span>
+          </div>
+        </div>
       </div>
 
       {/* In-App Admin Password Settings Module (Admin Dashboard) */}

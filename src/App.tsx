@@ -17,6 +17,7 @@ import { AdminSettingsView } from './components/settings/AdminSettingsView';
 import { UnifiedAuthPortal } from './components/auth/UnifiedAuthPortal';
 import { PendingReviewLockedState } from './components/auth/PendingReviewLockedState';
 import { AccountApprovalsPanel } from './components/admin/AccountApprovalsPanel';
+import { AuditTrailView } from './components/admin/AuditTrailView';
 import { BootLoader } from './components/common/BootLoader';
 
 const LMSDashboardContent: React.FC = () => {
@@ -73,7 +74,8 @@ const LMSDashboardContent: React.FC = () => {
         (currentRole === 'parent' && activeTab === 'students') ||
         (currentRole === 'student' && activeTab === 'students') ||
         activeTab === 'settings' ||
-        activeTab === 'approvals'
+        activeTab === 'approvals' ||
+        activeTab === 'audit_trail'
       ) && <FilterToolbar />}
 
       {/* Main Content Viewport */}
@@ -122,6 +124,7 @@ const LMSDashboardContent: React.FC = () => {
             {activeTab === 'teachers_subjects' && <TeachersAndSubjectsModule />}
             {activeTab === 'data_management' && <DataManagement />}
             {activeTab === 'settings' && <AdminSettingsView />}
+            {activeTab === 'audit_trail' && <AuditTrailView />}
           </>
         )}
       </main>

@@ -10,11 +10,15 @@ import {
   getDocs,
   onSnapshot,
   getDocFromServer,
+  deleteDoc,
+  query,
+  where,
+  limit,
   Firestore,
   Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Teacher, LMSUser, UserStatus, AssignedRole, MarkSubmission } from '../types/lms';
+import { Teacher, LMSUser, UserStatus, AssignedRole, MarkSubmission, Student, SubjectConfig, AuditLogEntry } from '../types/lms';
 
 // Initialize Firebase App instance
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -441,4 +445,289 @@ export function subscribeToMarkSubmissions(
     }
   );
 }
+
+/**
+ * Saves or updates a student profile and term marks to Firestore under 'students' collection.
+ * This guarantees changes made in Admin/Teacher mode are stored in the cloud and synced in real time.
+ */
+export async function syncStudentToFirestore(student: Student): Promise<void> {
+  const path = `students/${student.id}`;
+  try {
+    const studentDocRef = doc(db, 'students', student.id);
+    const dataToSave: Record<string, any> = {
+      id: student.id,
+      indexNumber: student.indexNumber.toUpperCase().trim(),
+      fullName: student.fullName,
+      grade: student.grade,
+      division: student.division,
+      gender: student.gender,
+      medium: student.medium,
+      attendanceRate: student.attendanceRate,
+      guardianName: student.guardianName,
+      contactNumber: student.contactNumber,
+      terms: student.terms,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await setDoc(studentDocRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Deletes a student record from Firestore
+ */
+export async function deleteStudentFromFirestore(studentId: string): Promise<void> {
+  const path = `students/${studentId}`;
+  try {
+    const studentDocRef = doc(db, 'students', studentId);
+    await deleteDoc(studentDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+/**
+ * Subscribes to real-time student roster and examination marks across all devices.
+ * When an admin or teacher changes marks or adds a student, other devices (such as parents)
+ * receive the update instantaneously.
+ */
+export function subscribeToStudents(
+  onUpdate: (students: Student[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const studentsCol = collection(db, 'students');
+
+  return onSnapshot(
+    studentsCol,
+    (snapshot) => {
+      const list: Student[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as Student;
+        list.push({
+          ...item,
+          indexNumber: (item.indexNumber || '').toUpperCase().trim(),
+        });
+      });
+      onUpdate(list);
+    },
+    (error) => {
+      console.warn('Students listener error:', error);
+      if (onError) onError(error);
+    }
+  );
+}
+
+/**
+ * Seeds initial baseline students to Firestore if collection is empty
+ */
+export async function seedInitialStudentsToFirestore(students: Student[]): Promise<void> {
+  for (const student of students) {
+    try {
+      await syncStudentToFirestore(student);
+    } catch (e) {
+      console.error(`Failed to seed student ${student.id} (${student.indexNumber}) to Firestore:`, e);
+    }
+  }
+}
+
+/**
+ * Directly queries Firestore for a student by exact Examination Index Number or Student ID.
+ * Provides an instant direct-server lookup fallback for Parent Portal across devices.
+ */
+export async function searchStudentByIndexFromFirestore(queryStr: string): Promise<Student | null> {
+  const clean = queryStr.trim().toUpperCase();
+  if (!clean) return null;
+
+  try {
+    // 1. Direct doc lookup by ID
+    const directDoc = await getDoc(doc(db, 'students', clean));
+    if (directDoc.exists()) {
+      return directDoc.data() as Student;
+    }
+
+    // 2. Query by indexNumber field
+    const studentsCol = collection(db, 'students');
+    const q = query(studentsCol, where('indexNumber', '==', clean), limit(1));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data() as Student;
+    }
+
+    return null;
+  } catch (error) {
+    console.warn(`Firestore search for student index "${clean}" warning:`, error);
+    return null;
+  }
+}
+
+/**
+ * Deletes a teacher document from Firestore
+ */
+export async function deleteTeacherFromFirestore(teacherId: string): Promise<void> {
+  const path = `teachers/${teacherId}`;
+  try {
+    const teacherDocRef = doc(db, 'teachers', teacherId);
+    await deleteDoc(teacherDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+/**
+ * Saves or updates a subject configuration to Firestore under 'subjects' collection
+ */
+export async function syncSubjectToFirestore(subject: SubjectConfig): Promise<void> {
+  const path = `subjects/${subject.id}`;
+  try {
+    const subjectDocRef = doc(db, 'subjects', subject.id);
+    const dataToSave: Record<string, any> = {
+      id: subject.id,
+      name: subject.name,
+      shortName: subject.shortName,
+      code: subject.code,
+      applicableGrades: subject.applicableGrades,
+      category: subject.category,
+      updatedAt: new Date().toISOString(),
+    };
+    if (subject.assignedTeacherId) {
+      dataToSave.assignedTeacherId = subject.assignedTeacherId;
+    }
+    if (subject.description) {
+      dataToSave.description = subject.description;
+    }
+
+    await setDoc(subjectDocRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Deletes a subject document from Firestore
+ */
+export async function deleteSubjectFromFirestore(subjectId: string): Promise<void> {
+  const path = `subjects/${subjectId}`;
+  try {
+    const subjectDocRef = doc(db, 'subjects', subjectId);
+    await deleteDoc(subjectDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+/**
+ * Subscribes to real-time curriculum subjects collection updates across all devices
+ */
+export function subscribeToSubjects(
+  onUpdate: (subjects: SubjectConfig[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const subjectsCol = collection(db, 'subjects');
+
+  return onSnapshot(
+    subjectsCol,
+    (snapshot) => {
+      const list: SubjectConfig[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as SubjectConfig;
+        list.push(item);
+      });
+      onUpdate(list);
+    },
+    (error) => {
+      console.warn('Subjects listener error:', error);
+      if (onError) onError(error);
+    }
+  );
+}
+
+/**
+ * Seeds initial baseline curriculum subjects to Firestore if collection is empty
+ */
+export async function seedInitialSubjectsToFirestore(subjects: SubjectConfig[]): Promise<void> {
+  for (const subject of subjects) {
+    try {
+      await syncSubjectToFirestore(subject);
+    } catch (e) {
+      console.error(`Failed to seed subject ${subject.id} to Firestore:`, e);
+    }
+  }
+}
+
+/**
+ * Saves an audit trail log entry to Firestore under 'audit_logs' collection.
+ * Tracks every activity made by teachers, parents, students, and administrators.
+ */
+export async function syncAuditLogToFirestore(log: AuditLogEntry): Promise<void> {
+  const path = `audit_logs/${log.id}`;
+  try {
+    const logDocRef = doc(db, 'audit_logs', log.id);
+    const dataToSave: Record<string, any> = {
+      id: log.id,
+      timestamp: log.timestamp,
+      actorName: log.actorName,
+      actorRole: log.actorRole,
+      action: log.action,
+      actionTitle: log.actionTitle,
+      details: log.details,
+      severity: log.severity,
+    };
+
+    if (log.actorIdentifier) dataToSave.actorIdentifier = log.actorIdentifier;
+    if (log.targetEntity) dataToSave.targetEntity = log.targetEntity;
+    if (typeof log.grade === 'number') dataToSave.grade = log.grade;
+    if (log.division) dataToSave.division = log.division;
+    if (typeof log.term === 'number') dataToSave.term = log.term;
+    if (log.deviceInfo) dataToSave.deviceInfo = log.deviceInfo;
+
+    await setDoc(logDocRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Subscribes to real-time audit logs collection updates across all devices
+ */
+export function subscribeToAuditLogs(
+  onUpdate: (logs: AuditLogEntry[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const auditCol = collection(db, 'audit_logs');
+
+  return onSnapshot(
+    auditCol,
+    (snapshot) => {
+      const list: AuditLogEntry[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as AuditLogEntry;
+        list.push(item);
+      });
+      // Sort newest first
+      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      onUpdate(list);
+    },
+    (error) => {
+      console.warn('Audit logs listener error:', error);
+      if (onError) onError(error);
+    }
+  );
+}
+
+/**
+ * Seeds initial baseline audit trail events if collection is empty
+ */
+export async function seedInitialAuditLogsToFirestore(logs: AuditLogEntry[]): Promise<void> {
+  for (const log of logs) {
+    try {
+      await syncAuditLogToFirestore(log);
+    } catch (e) {
+      console.error(`Failed to seed audit log ${log.id} to Firestore:`, e);
+    }
+  }
+}
+
 

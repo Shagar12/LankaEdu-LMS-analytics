@@ -155,3 +155,14 @@ export async function recordAudit(action: string, userEmail?: string, details?: 
     console.warn('Audit log write non-fatal notice:', error);
   }
 }
+
+// Retrieve audit logs from Cloud SQL
+export async function getDbAuditLogs(limitCount = 100) {
+  try {
+    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limitCount);
+  } catch (error) {
+    console.warn('Failed to fetch audit logs from relational store:', error);
+    return [];
+  }
+}
+

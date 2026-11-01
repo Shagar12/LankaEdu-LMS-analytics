@@ -15,6 +15,7 @@ import {
   getDbMarkSubmissions,
   getDbCurriculumStandards,
   recordAudit,
+  getDbAuditLogs,
 } from './src/db/queries.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -175,7 +176,29 @@ async function startServer() {
     }
   });
 
-  // 7. Vite Integration (Mount vite.middlewares in dev mode, static in prod)
+  // 7. System Audit Logs API (Cloud SQL & Supabase persistence)
+  app.get('/api/audit-logs', async (req, res) => {
+    try {
+      const logs = await getDbAuditLogs(200);
+      res.json({ logs });
+    } catch (error: any) {
+      console.error('Error fetching audit logs:', error);
+      res.status(500).json({ error: error.message || 'Failed to fetch audit logs' });
+    }
+  });
+
+  app.post('/api/audit-logs', async (req, res) => {
+    try {
+      const { action, userEmail, details, ipAddress } = req.body;
+      await recordAudit(action || 'USER_ACTION', userEmail, details, ipAddress || req.ip);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Error recording audit log:', error);
+      res.status(500).json({ error: error.message || 'Failed to record audit log' });
+    }
+  });
+
+  // 8. Vite Integration (Mount vite.middlewares in dev mode, static in prod)
   if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false },
