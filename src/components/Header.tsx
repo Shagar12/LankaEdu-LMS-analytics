@@ -1,13 +1,14 @@
 import React from 'react';
 import { useLMS } from '../context/LMSContext';
-import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key, UserCheck, LogOut } from 'lucide-react';
+import { GraduationCap, Sun, Moon, Plus, BookOpen, Search, Settings, Key, UserCheck, LogOut, WifiOff, Cpu } from 'lucide-react';
 import { RoleSwitcher } from './auth/RoleSwitcher';
 
 interface HeaderProps {
   onOpenAddStudent: () => void;
+  onOpenBootloader?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent, onOpenBootloader }) => {
   const {
     activeTab,
     setActiveTab,
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
     currentUser,
     logoutUser,
     setShowLandingPage,
+    isOnline,
   } = useLMS();
 
   return (
@@ -239,8 +241,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent }) => {
 
           {/* Zone 3: Role Switcher & Action controls */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Classroom Offline Resiliency Indicator */}
+            {!isOnline && (
+              <span
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 border border-amber-300 dark:border-amber-800 animate-pulse"
+                title="Firestore enableIndexedDbPersistence: Offline cache active for classroom reliability"
+              >
+                <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Offline (IndexedDB Active)</span>
+              </span>
+            )}
+
             {/* RBAC Role Switcher Dropdown */}
             <RoleSwitcher />
+
+            {/* System Diagnostics / Bootloader Trigger */}
+            {onOpenBootloader && (
+              <button
+                onClick={onOpenBootloader}
+                title="System Diagnostics & Bootloader (Firebase + PostgreSQL / Supabase)"
+                aria-label="System Diagnostics"
+                className="p-2 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <Cpu className="w-4 h-4 text-indigo-500" />
+              </button>
+            )}
 
             {/* Dark/Light mode toggle */}
             <button

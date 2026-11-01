@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getFirestore,
+  enableIndexedDbPersistence,
   doc,
   getDoc,
   setDoc,
@@ -13,13 +14,41 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Teacher, LMSUser, UserStatus, AssignedRole } from '../types/lms';
+import { Teacher, LMSUser, UserStatus, AssignedRole, MarkSubmission } from '../types/lms';
 
 // Initialize Firebase App instance
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Initialize Firestore with specific database ID from config
 export const db: Firestore = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Offline Persistence State Tracking
+export let isOfflinePersistenceActive = false;
+export let offlinePersistenceStatusMessage = 'Initializing IndexedDB offline persistence...';
+
+// Enable IndexedDb Offline Persistence so teachers can continue entering marks in classrooms with unstable network connectivity
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db)
+    .then(() => {
+      isOfflinePersistenceActive = true;
+      offlinePersistenceStatusMessage = 'IndexedDB offline persistence active. Marks cached locally and synced when online.';
+      console.log('Firestore enableIndexedDbPersistence: Offline cache enabled for classroom connectivity resiliency.');
+    })
+    .catch((err) => {
+      if (err.code === 'failed-precondition') {
+        // Multiple tabs open, persistence can only be enabled in one tab at a time
+        offlinePersistenceStatusMessage = 'Multiple browser tabs open. Offline persistence active in primary tab.';
+        console.warn('Firestore enableIndexedDbPersistence: multiple tabs open. Primary tab will handle offline cache.');
+      } else if (err.code === 'unimplemented') {
+        // The current browser does not support all of the features required to enable persistence
+        offlinePersistenceStatusMessage = 'IndexedDB offline persistence is not supported in this browser.';
+        console.warn('Firestore enableIndexedDbPersistence: Browser does not support IndexedDB persistence.');
+      } else {
+        offlinePersistenceStatusMessage = `Persistence initialization notice: ${err?.message || err}`;
+        console.warn('Firestore enableIndexedDbPersistence initialization error:', err);
+      }
+    });
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -353,5 +382,63 @@ export async function seedInitialUsersToFirestore(users: LMSUser[]): Promise<voi
       console.error(`Failed to seed user ${user.id} to Firestore`, e);
     }
   }
+}
+
+/**
+ * Saves mark submission to Firestore under 'mark_submissions' collection.
+ * Thanks to enableIndexedDbPersistence, this works seamlessly even when offline!
+ */
+export async function syncMarkSubmissionToFirestore(submission: MarkSubmission): Promise<void> {
+  const path = `mark_submissions/${submission.id}`;
+  try {
+    const docRef = doc(db, 'mark_submissions', submission.id);
+    const dataToSave: Record<string, any> = {
+      id: submission.id,
+      teacherId: submission.teacherId || 'tch_guest',
+      teacherName: submission.teacherName || 'Assigned Teacher',
+      subjectId: submission.subjectId,
+      grade: submission.grade,
+      division: submission.division,
+      term: submission.term,
+      status: submission.status,
+      submittedAt: submission.submittedAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      notes: submission.notes || '',
+    };
+
+    if (submission.marks) {
+      dataToSave.marks = submission.marks;
+    }
+
+    await setDoc(docRef, dataToSave, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Subscribes to mark submissions collection in real time
+ */
+export function subscribeToMarkSubmissions(
+  onUpdate: (submissions: MarkSubmission[]) => void,
+  onError?: (error: unknown) => void
+): Unsubscribe {
+  const submissionsCol = collection(db, 'mark_submissions');
+
+  return onSnapshot(
+    submissionsCol,
+    (snapshot) => {
+      const list: MarkSubmission[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data() as MarkSubmission;
+        list.push(item);
+      });
+      onUpdate(list);
+    },
+    (error) => {
+      console.warn('Mark submissions listener error:', error);
+      if (onError) onError(error);
+    }
+  );
 }
 

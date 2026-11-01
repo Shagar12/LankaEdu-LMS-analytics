@@ -108,6 +108,29 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // Validation helper for Mark Submissions (Teacher mark entries and offline IndexedDB persistence)
+    function isValidMarkSubmissionDoc(data) {
+      return data.keys().hasOnly([
+          'id', 'teacherId', 'teacherName', 'subjectId', 'grade', 
+          'division', 'term', 'status', 'marks', 'submittedAt', 'updatedAt', 'notes'
+        ])
+        && data.id is string
+        && data.subjectId is string
+        && data.grade is number
+        && data.division in ['A', 'B', 'C']
+        && data.term in [1, 2, 3]
+        && data.status in ['draft', 'submitted', 'approved', 'rejected']
+        && (!('marks' in data) || data.marks is map);
+    }
+
+    // Mark Submissions collection (offline mark entry sync)
+    match /mark_submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if isValidMarkSubmissionDoc(request.resource.data)
+        && request.resource.data.id == submissionId;
+      allow delete: if true;
+    }
+
     // Default deny for all other paths
     match /{document=**} {
       allow read, write: if false;

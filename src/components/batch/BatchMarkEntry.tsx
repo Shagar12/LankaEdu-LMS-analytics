@@ -15,6 +15,10 @@ import {
   ToggleLeft,
   ToggleRight,
   CheckCircle2,
+  Wifi,
+  WifiOff,
+  Database,
+  HardDrive,
 } from 'lucide-react';
 
 export const BatchMarkEntry: React.FC = () => {
@@ -37,6 +41,8 @@ export const BatchMarkEntry: React.FC = () => {
     getSubmissionStatus,
     approveMarksSubmission,
     markSubmissions,
+    isOnline,
+    isOfflinePersistenceActive,
   } = useLMS();
 
   // Local state for mark grid: studentId -> subjectId -> number
@@ -200,6 +206,30 @@ export const BatchMarkEntry: React.FC = () => {
                   Parent Mode: Read-Only
                 </span>
               )}
+
+              <span className="text-xs text-slate-400">·</span>
+
+              {/* Firestore enableIndexedDbPersistence Offline Resiliency Badge */}
+              <span
+                className={`text-xs font-semibold px-2 py-0.5 rounded flex items-center gap-1.5 transition-colors ${
+                  !isOnline
+                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-800 animate-pulse'
+                    : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                }`}
+                title="Firestore enableIndexedDbPersistence: Offline cache safeguards mark entry without internet connectivity"
+              >
+                {!isOnline ? (
+                  <>
+                    <WifiOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Classroom Offline Mode (IndexedDB Active)</span>
+                  </>
+                ) : (
+                  <>
+                    <Database className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span>IndexedDB Offline Ready</span>
+                  </>
+                )}
+              </span>
             </div>
 
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">
@@ -336,6 +366,28 @@ export const BatchMarkEntry: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Classroom Network Resiliency & Offline Persistence Banner */}
+      {!isOnline && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-xl p-4 flex items-start gap-3.5 shadow-xs">
+          <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 flex items-center justify-center shrink-0 mt-0.5">
+            <WifiOff className="w-5 h-5" />
+          </div>
+          <div className="flex-1 text-xs">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-bold text-amber-950 dark:text-amber-200 text-sm">
+                Unstable Classroom Network — Offline Persistence Engaged
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                IndexedDB Cache Active
+              </span>
+            </div>
+            <p className="text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+              You can safely continue entering, calculating, and submitting marks. With Firestore's <strong>enableIndexedDbPersistence</strong> enabled, all inputs are stored immediately in the browser's local IndexedDB and will automatically synchronize with the central database the moment your network reconnects.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Spreadsheet Grid */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">

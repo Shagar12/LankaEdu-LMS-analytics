@@ -17,6 +17,7 @@ import { AdminSettingsView } from './components/settings/AdminSettingsView';
 import { UnifiedAuthPortal } from './components/auth/UnifiedAuthPortal';
 import { PendingReviewLockedState } from './components/auth/PendingReviewLockedState';
 import { AccountApprovalsPanel } from './components/admin/AccountApprovalsPanel';
+import { BootLoader } from './components/common/BootLoader';
 
 const LMSDashboardContent: React.FC = () => {
   const {
@@ -28,6 +29,12 @@ const LMSDashboardContent: React.FC = () => {
     showLandingPage,
   } = useLMS();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBooting, setIsBooting] = useState<boolean>(true);
+
+  // 0. Pre-flight Bootloading Interface & Subsystem Check
+  if (isBooting) {
+    return <BootLoader onComplete={() => setIsBooting(false)} />;
+  }
 
   // 1. If user registration is pending administrator review
   if (isPendingReview) {
@@ -36,14 +43,30 @@ const LMSDashboardContent: React.FC = () => {
 
   // 2. If user is unauthenticated or has requested the Landing Portal
   if (showLandingPage) {
-    return <UnifiedAuthPortal />;
+    return (
+      <>
+        <UnifiedAuthPortal />
+        {/* Floating Bootloader / Diagnostics Launcher */}
+        <button
+          onClick={() => setIsBooting(true)}
+          title="Run System Diagnostics & Dual Backend Handshake"
+          className="fixed bottom-4 right-4 z-40 px-3 py-1.5 text-xs font-semibold rounded-full bg-slate-900/80 hover:bg-slate-900 text-slate-300 hover:text-white border border-slate-700/80 shadow-lg backdrop-blur-sm transition-all flex items-center gap-1.5"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>System Health & Diagnostics</span>
+        </button>
+      </>
+    );
   }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors selection:bg-indigo-500/20 selection:text-indigo-700 dark:selection:text-indigo-300">
       
-      {/* Top Header with Role Switcher */}
-      <Header onOpenAddStudent={() => setIsAddModalOpen(true)} />
+      {/* Top Header with Role Switcher & Bootloader Trigger */}
+      <Header
+        onOpenAddStudent={() => setIsAddModalOpen(true)}
+        onOpenBootloader={() => setIsBooting(true)}
+      />
 
       {/* Filter Toolbar for Grades, Divisions & Terms */}
       {!(

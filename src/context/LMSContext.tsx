@@ -41,6 +41,9 @@ import {
   isMasterAdminEmail,
   MASTER_ADMIN_EMAILS,
   AdminConfigData,
+  isOfflinePersistenceActive,
+  syncMarkSubmissionToFirestore,
+  subscribeToMarkSubmissions,
 } from '../lib/firebase';
 import {
   computeSha256Hash,
@@ -188,10 +191,12 @@ interface LMSContextType {
   getSubmissionStatus: (subjectId: string, grade: GradeLevel, division: Division, term: TermNumber) => MarkSubmissionStatus;
   isSubjectEditableByCurrentRole: (subjectId: string, grade: GradeLevel, division: Division) => boolean;
 
-  // Firebase Real-time Multi-Device Sync
+  // Firebase Real-time Multi-Device Sync & Offline Persistence
   isFirebaseConnected: boolean;
   isFirebaseSyncing: boolean;
   lastFirebaseSync: string | null;
+  isOnline: boolean;
+  isOfflinePersistenceActive: boolean;
   updateTeacherPassword: (teacherId: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   syncAllCredentialsToFirebase: () => Promise<{ success: boolean; message: string }>;
 
@@ -403,10 +408,24 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [isAdminAuthenticated, adminPassword, isAdminRemembered, activeSessionAuthHash]);
 
-  // Firebase Firestore Real-Time Sync State
+  // Firebase Firestore Real-Time Sync & Offline Persistence State
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
   const [isFirebaseSyncing, setIsFirebaseSyncing] = useState<boolean>(false);
   const [lastFirebaseSync, setLastFirebaseSync] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? navigator.onLine : true;
+  });
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const [loggedTeacherId, setLoggedTeacherId] = useState<string | null>(() => {
     return localStorage.getItem(LOGGED_TEACHER_STORAGE_KEY);
@@ -555,11 +574,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [students]);
 
-  // Real-time Firestore synchronization for Admin, Faculty credentials, and User Registrations across all devices
+  // Real-time Firestore synchronization for Admin, Faculty credentials, User Registrations, and Mark Submissions across all devices
   useEffect(() => {
     let unsubscribeAdmin: (() => void) | undefined;
     let unsubscribeTeachers: (() => void) | undefined;
     let unsubscribeUsers: (() => void) | undefined;
+    let unsubscribeMarkSubmissions: (() => void) | undefined;
 
     testFirestoreConnection().then((connected) => {
       setIsFirebaseConnected(connected);
@@ -700,12 +720,27 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           );
         }
       });
+
+      // 4. Subscribe to Mark Submissions collection (offline-first with IndexedDB persistence)
+      unsubscribeMarkSubmissions = subscribeToMarkSubmissions((remoteSubmissions) => {
+        if (remoteSubmissions.length > 0) {
+          setMarkSubmissions((prev) => {
+            const map = new Map<string, MarkSubmission>();
+            prev.forEach((p) => map.set(p.id, p));
+            remoteSubmissions.forEach((r) => map.set(r.id, r));
+            const merged = Array.from(map.values());
+            localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(merged));
+            return merged;
+          });
+        }
+      });
     });
 
     return () => {
       if (unsubscribeAdmin) unsubscribeAdmin();
       if (unsubscribeTeachers) unsubscribeTeachers();
       if (unsubscribeUsers) unsubscribeUsers();
+      if (unsubscribeMarkSubmissions) unsubscribeMarkSubmissions();
     };
   }, []);
 
@@ -1119,6 +1154,19 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     try {
       await syncUserToFirestore(newUser);
+      // Dual-sync to relational PostgreSQL / Supabase backend
+      fetch('/api/users/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: newUser.id,
+          email: newUser.email,
+          fullName: newUser.fullName || newUser.name,
+          phone: newUser.phone,
+          assignedRole: newUser.assignedRole,
+          status: newUser.status,
+        }),
+      }).catch((err) => console.warn('Relational backend sync note:', err));
     } catch (e) {
       console.warn('Signup Firestore sync note:', e);
     }
@@ -1331,6 +1379,17 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     try {
       await updateUserRoleAndStatusInFirestore(userId, 'active', 'teacher');
+      // Dual-sync to relational PostgreSQL / Supabase backend
+      fetch('/api/users/assign-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: userId,
+          status: 'active',
+          assignedRole: 'teacher',
+        }),
+      }).catch((err) => console.warn('Backend role update notice:', err));
+
       return {
         success: true,
         message: `Successfully approved and assigned ${target.name} as Teacher!`,
@@ -1390,6 +1449,18 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     try {
       await updateUserRoleAndStatusInFirestore(userId, 'active', 'student', cleanIndex);
+      // Dual-sync to relational PostgreSQL / Supabase backend
+      fetch('/api/users/assign-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: userId,
+          status: 'active',
+          assignedRole: 'student',
+          indexNumber: cleanIndex,
+        }),
+      }).catch((err) => console.warn('Backend role update notice:', err));
+
       return {
         success: true,
         message: `Successfully approved and assigned ${target.name} as Student with Index ${cleanIndex}!`,
@@ -1470,28 +1541,74 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const teacherId = currentTeacher?.id || 'tch_guest';
     const id = `subm_${subjectId}_${grade}_${division}_${term}`;
 
+    // Extract student marks for this specific class and subject
+    const subjectMarks: Record<string, number> = {};
+    students
+      .filter((s) => s.grade === grade && s.division === division)
+      .forEach((s) => {
+        const mark = s.terms[term]?.marks[subjectId];
+        if (mark !== undefined) {
+          subjectMarks[s.id] = mark;
+        }
+      });
+
+    const newSubmission: MarkSubmission = {
+      id,
+      teacherId,
+      teacherName,
+      subjectId,
+      grade,
+      division,
+      term,
+      status: instantSaveMode ? 'approved' : 'submitted',
+      submittedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+      updatedAt: new Date().toISOString(),
+      notes: notes || (instantSaveMode ? 'Direct instant save by instructor' : 'Submitted for administrative approval'),
+      marks: subjectMarks,
+    };
+
     setMarkSubmissions((prev) => {
       const existing = prev.filter((m) => m.id !== id);
-      const newSubmission: MarkSubmission = {
-        id,
+      return [newSubmission, ...existing];
+    });
+
+    // Firestore sync: thanks to enableIndexedDbPersistence, offline writes are stored in IndexedDB and synced upon reconnection
+    syncMarkSubmissionToFirestore(newSubmission).catch((err) =>
+      console.warn('Firestore mark submission offline write note (stored in IndexedDB):', err)
+    );
+
+    // Dual-sync to relational PostgreSQL / Supabase backend
+    fetch('/api/marks/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionKey: id,
         teacherId,
         teacherName,
         subjectId,
         grade,
         division,
         term,
-        status: instantSaveMode ? 'approved' : 'submitted',
-        submittedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-        notes: notes || (instantSaveMode ? 'Direct instant save by instructor' : 'Submitted for administrative approval'),
-      };
-      return [newSubmission, ...existing];
-    });
+        status: newSubmission.status,
+        marksJson: subjectMarks,
+        notes: newSubmission.notes,
+      }),
+    }).catch((err) => console.warn('PostgreSQL mark submission sync note:', err));
   };
 
   const approveMarksSubmission = (submissionId: string) => {
-    setMarkSubmissions((prev) =>
-      prev.map((m) => (m.id === submissionId ? { ...m, status: 'approved' } : m))
-    );
+    setMarkSubmissions((prev) => {
+      const updated = prev.map((m) =>
+        m.id === submissionId ? { ...m, status: 'approved' as const, updatedAt: new Date().toISOString() } : m
+      );
+      const target = updated.find((m) => m.id === submissionId);
+      if (target) {
+        syncMarkSubmissionToFirestore(target).catch((err) =>
+          console.warn('Firestore mark submission approval sync note:', err)
+        );
+      }
+      return updated;
+    });
   };
 
   // Teacher methods
@@ -1870,10 +1987,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         approveMarksSubmission,
         getSubmissionStatus,
         isSubjectEditableByCurrentRole,
-        // Firebase Multi-Device Synchronization
+        // Firebase Multi-Device Synchronization & Offline Persistence
         isFirebaseConnected,
         isFirebaseSyncing,
         lastFirebaseSync,
+        isOnline,
+        isOfflinePersistenceActive,
         updateTeacherPassword,
         syncAllCredentialsToFirebase,
         // Unified Signup, Onboarding & Admin Approvals Hub

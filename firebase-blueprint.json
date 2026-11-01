@@ -183,6 +183,63 @@
         }
       },
       "required": ["id", "name", "email", "status", "assignedRole"]
+    },
+    "mark_submissions": {
+      "description": "Submitted class marks, term assessments, and approval workflows synced via Firestore with offline IndexedDB persistence",
+      "path": "mark_submissions/{submissionId}",
+      "fields": {
+        "id": {
+          "type": "string",
+          "description": "Unique submission key (e.g. subm_sci_10_A_1)"
+        },
+        "teacherId": {
+          "type": "string",
+          "description": "ID of teacher who entered the marks"
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Name of submitting teacher"
+        },
+        "subjectId": {
+          "type": "string",
+          "description": "Curriculum subject ID"
+        },
+        "grade": {
+          "type": "number",
+          "description": "Grade level (1-13)"
+        },
+        "division": {
+          "type": "string",
+          "enum": ["A", "B", "C"],
+          "description": "Class division letter"
+        },
+        "term": {
+          "type": "number",
+          "description": "Academic evaluation term (1, 2, or 3)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "submitted", "approved", "rejected"],
+          "description": "Approval workflow state"
+        },
+        "marks": {
+          "type": "object",
+          "description": "Key-value map of studentId to numerical mark (0-100)"
+        },
+        "submittedAt": {
+          "type": "string",
+          "description": "Timestamp when marks were submitted"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when marks were last updated"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional notes or remarks from instructor"
+        }
+      },
+      "required": ["id", "subjectId", "grade", "division", "term", "status"]
     }
   }
 }

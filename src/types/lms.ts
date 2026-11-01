@@ -48,7 +48,9 @@ export interface MarkSubmission {
   term: TermNumber;
   status: MarkSubmissionStatus;
   submittedAt?: string;
+  updatedAt?: string;
   notes?: string;
+  marks?: Record<string, number>;
 }
 
 export interface TeacherAssignment {
