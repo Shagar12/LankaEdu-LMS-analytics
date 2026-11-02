@@ -66,7 +66,7 @@ export const UnifiedAuthPortal: React.FC<UnifiedAuthPortalProps> = ({ initialTab
     },
     {
       role: 'Teacher',
-      email: 'pushpa.k@lankaedu.lk',
+      email: 'pushpa.k@educore.edu',
       password: 'teacher123',
       desc: 'Teacher Portal (Pushpa Kumarihamy)',
       badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300',
@@ -173,10 +173,10 @@ export const UnifiedAuthPortal: React.FC<UnifiedAuthPortalProps> = ({ initialTab
             </div>
             <div>
               <span className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white leading-tight block">
-                LankaEdu LMS
+                EduCore LMS
               </span>
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                National Curriculum & Academic Onboarding
+                Academic Curriculum & Onboarding
               </span>
             </div>
           </div>
@@ -204,15 +204,15 @@ export const UnifiedAuthPortal: React.FC<UnifiedAuthPortalProps> = ({ initialTab
         <div className="lg:w-1/2 space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300">
             <ShieldCheck className="w-4 h-4 text-indigo-600" />
-            <span>Sri Lankan National School Standard · Grades 1–13</span>
+            <span>School Academic Standard · Grades 1–13</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-[1.15]">
-            Unified Academic Portal & Role-Governed Access.
+            Unified Academic Portal & Role-Based Access.
           </h1>
 
           <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-            Welcome to <strong>LankaEdu LMS</strong>. Register your personal profile to apply for school portal clearance. Every new account is secured in a <strong>pending verification state</strong> until assigned an authorized role by the School Administrator.
+            Welcome to <strong>EduCore LMS</strong>. Register your personal profile to apply for school portal clearance. Every new account is secured in a <strong>pending verification state</strong> until assigned an authorized role by the School Administrator.
           </p>
 
           {/* Core Feature Badges */}
@@ -582,10 +582,10 @@ export const UnifiedAuthPortal: React.FC<UnifiedAuthPortalProps> = ({ initialTab
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-2">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              LankaEdu LMS & Analytics System
+              EduCore LMS & Analytics System
             </span>
             <span>·</span>
-            <span>Sri Lankan National Curriculum (Grades 1–13)</span>
+            <span>Standard Academic Curriculum (Grades 1–13)</span>
           </div>
           <div>
             <span>Ministry of Education Grading Standards · 2026 Academic Cycle</span>

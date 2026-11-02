@@ -154,7 +154,7 @@ export const INITIAL_MOCK_TEACHERS: Teacher[] = [
     fullName: 'Mrs. Sunethra Wickramasinghe',
     email: 's.wickramasinghe@school.lk',
     phone: '+94 71 556 7788',
-    qualification: 'National Diploma in Teaching (Primary), Maharagama NCOE',
+    qualification: 'Diploma in Professional Teaching (Primary), Maharagama NCOE',
     isClassTeacherOf: {
       grade: 5,
       division: 'A',

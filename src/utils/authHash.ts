@@ -1,5 +1,5 @@
 /**
- * Authentication Hash utilities for LankaEdu LMS
+ * Authentication Hash utilities for EduCore LMS
  * Computes deterministic SHA-256 hex string representation of administrator passwords
  * and provides mobile device session detection.
  */

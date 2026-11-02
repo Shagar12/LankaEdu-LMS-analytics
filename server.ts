@@ -166,7 +166,7 @@ async function startServer() {
     }
   });
 
-  // 6. National Curriculum standards
+  // 6. Academic Curriculum standards
   app.get('/api/curriculum/standards', async (req, res) => {
     try {
       const standards = await getDbCurriculumStandards();
@@ -213,7 +213,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`LankaEdu LMS Unified Server running on http://0.0.0.0:${PORT}`);
+    console.log(`EduCore LMS Unified Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

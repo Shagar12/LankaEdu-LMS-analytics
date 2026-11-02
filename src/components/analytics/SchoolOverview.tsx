@@ -164,7 +164,7 @@ export const SchoolOverview: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                National Sri Lankan Curriculum · Grades 1 to 13
+                Standard Academic Curriculum · Grades 1 to 13
               </span>
               <span className="text-xs text-slate-400">·</span>
               <span className="text-xs font-semibold text-slate-500">Academic Year 2026</span>
@@ -421,9 +421,9 @@ export const SchoolOverview: React.FC = () => {
 
           <div className="mt-4 p-3 rounded-lg bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-xs text-slate-600 dark:text-slate-300">
             <span className="font-semibold text-indigo-700 dark:text-indigo-400 block mb-0.5">
-              Sri Lankan Curriculum Architecture Note:
+              Curriculum Architecture Note:
             </span>
-            Grades 10–11 prepare students for the National G.C.E. Ordinary Level examination across the 9 standard subjects. Grades 12–13 represent the Collegiate Advanced Level streams.
+            Grades 10–11 prepare students for the G.C.E. Ordinary Level examination across the 9 standard subjects. Grades 12–13 represent the Collegiate Advanced Level streams.
           </div>
         </div>
 

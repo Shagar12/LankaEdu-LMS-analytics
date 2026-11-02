@@ -152,12 +152,65 @@ export const TeacherPortalView: React.FC = () => {
 
         {/* Permission Rules Disclaimer */}
         <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-800/20 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
-          <ShieldAlert className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <ShieldAlert className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
           <div className="text-[11px] leading-relaxed">
-            <strong>RBAC Security Notice:</strong> You are authorized to enter and edit marks <em>only</em> for the {currentTeacher.assignments.length} assigned subject classes listed below. Other teachers' subject columns and student personal identities are locked to prevent unauthorized changes.
+            <strong>RBAC Curriculum & Mark Entry Policy:</strong>{' '}
+            {currentTeacher.isClassTeacherOf ? (
+              <span>
+                As the <strong>Appointed Class Teacher for Grade {currentTeacher.isClassTeacherOf.grade}-{currentTeacher.isClassTeacherOf.division}</strong>, you have full authority to change and verify marks for <em>all subjects</em> across all students in your class. For classes where you are an appointed <strong>Subject Teacher</strong>, you can change marks only for your allocated subjects.
+              </span>
+            ) : (
+              <span>
+                You are currently assigned as a <strong>Subject Teacher</strong> for {currentTeacher.assignments.length} subject allocation(s). You can change and enter marks <em>only</em> for your appointed subjects. All other subjects are locked to protect academic integrity.
+              </span>
+            )}
           </div>
         </div>
       </div>
+
+      {/* APPOINTED CLASS TEACHER WORKSPACE CARD */}
+      {currentTeacher.isClassTeacherOf && (
+        <div className="bg-gradient-to-r from-indigo-900 to-indigo-800 dark:from-indigo-950 dark:to-slate-900 border border-indigo-700/60 dark:border-indigo-800/80 rounded-xl p-5 text-white shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="p-1.5 rounded-lg bg-white/10 text-indigo-200">
+                  <UserCheck className="w-4 h-4" />
+                </span>
+                <span className="text-xs uppercase tracking-wider font-bold text-indigo-200">
+                  Appointed Class Teacher Workspace
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  Full Marks Authority
+                </span>
+              </div>
+              <h2 className="text-lg sm:text-xl font-bold">
+                Grade {currentTeacher.isClassTeacherOf.grade} - Division {currentTeacher.isClassTeacherOf.division}
+              </h2>
+              <p className="text-xs text-indigo-200/90 max-w-2xl leading-relaxed">
+                You are officially appointed as the Class Teacher for this division. You have master clearance to enter, change, calculate, and certify marks for <strong>all subjects</strong> for every student in this classroom.
+              </p>
+            </div>
+
+            <div className="shrink-0 flex items-center gap-2">
+              <button
+                onClick={() => {
+                  if (currentTeacher.isClassTeacherOf) {
+                    setSelectedGrade(currentTeacher.isClassTeacherOf.grade);
+                    setSelectedDivision(currentTeacher.isClassTeacherOf.division);
+                    setActiveTab('batch_entry');
+                  }
+                }}
+                className="px-4 py-2.5 rounded-lg bg-white text-indigo-900 hover:bg-indigo-50 font-bold text-xs shadow-md transition-all flex items-center gap-2 whitespace-nowrap"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-indigo-700" />
+                <span>Open Class Mark Sheet</span>
+                <ArrowRight className="w-3.5 h-3.5 text-indigo-500" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {successMessage && (
         <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">

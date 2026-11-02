@@ -144,8 +144,8 @@ export const AdminSettingsView: React.FC = () => {
   const handleExportBackup = () => {
     const backupData = {
       exportedAt: new Date().toISOString(),
-      institution: 'LankaEdu School Management System',
-      curriculum: 'Sri Lankan National Curriculum (Grades 1–13)',
+      institution: 'EduCore School Management System',
+      curriculum: 'Standard Academic Curriculum (Grades 1–13)',
       totalStudents: students.length,
       totalTeachers: teachers.length,
       totalSubjects: subjects.length,
@@ -158,7 +158,7 @@ export const AdminSettingsView: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lankaedu_lms_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `educore_lms_backup_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -726,7 +726,7 @@ export const AdminSettingsView: React.FC = () => {
                   Institutional Profile
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Sri Lankan National School System
+                  School Academic System
                 </p>
               </div>
             </div>
@@ -755,7 +755,7 @@ export const AdminSettingsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Sri Lankan Grading Standards Overview */}
+          {/* Grading Standards Overview */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs">
             <div className="flex items-center gap-2.5 pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/80 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold">
@@ -802,7 +802,7 @@ export const AdminSettingsView: React.FC = () => {
                     <div className="text-[10px] text-indigo-700/80 dark:text-indigo-400">Satisfactory grasp of core syllabi</div>
                   </div>
                 </div>
-                <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">55–64%</span>
+                <span className="font-mono font-bold text-indigo-700 dark:text-indigo-300">50–64%</span>
               </div>
 
               <div className="p-2.5 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 flex items-center justify-between">
@@ -813,7 +813,7 @@ export const AdminSettingsView: React.FC = () => {
                     <div className="text-[10px] text-amber-700/80 dark:text-amber-400">Minimum passing standard</div>
                   </div>
                 </div>
-                <span className="font-mono font-bold text-amber-700 dark:text-amber-300">35–54%</span>
+                <span className="font-mono font-bold text-amber-700 dark:text-amber-300">35–49%</span>
               </div>
 
               <div className="p-2.5 rounded-lg bg-red-50/60 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40 flex items-center justify-between">
@@ -844,7 +844,7 @@ export const AdminSettingsView: React.FC = () => {
               Reset Entire School Database?
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 text-center mb-6 leading-relaxed">
-              This will overwrite all modified marks, enrolled students, and custom faculty assignments back to the Sri Lankan demonstration dataset. This action cannot be undone.
+              This will overwrite all modified marks, enrolled students, and custom faculty assignments back to the baseline demonstration dataset. This action cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2.5">
               <button

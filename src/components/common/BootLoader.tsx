@@ -64,7 +64,7 @@ export const BootLoader: React.FC<BootLoaderProps> = ({
     },
     {
       id: 'step-curriculum',
-      label: 'Sri Lankan Curriculum Standards',
+      label: 'Curriculum Academic Standards',
       detail: 'Caching MoE Grade 1-13 grading scales (A, B, C, S, W)',
       category: 'curriculum',
       status: 'pending',
@@ -176,13 +176,13 @@ export const BootLoader: React.FC<BootLoaderProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">LankaEdu LMS</h1>
+                <h1 className="text-xl font-bold tracking-tight text-white">EduCore LMS</h1>
                 <span className="text-[10px] uppercase font-semibold tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full">
                   v2.6 Core
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                National Academic Management & Dual Backend Engine
+                Academic Management & Dual Backend Engine
               </p>
             </div>
           </div>
@@ -288,18 +288,18 @@ export const BootLoader: React.FC<BootLoaderProps> = ({
             <span className="text-slate-400 text-[10px] flex items-center gap-1">
               <BookOpen className="w-3 h-3 text-indigo-400" /> Curriculum
             </span>
-            <span className="font-medium text-slate-200 truncate">Sri Lanka G1–13</span>
+            <span className="font-medium text-slate-200 truncate">Curriculum G1–13</span>
           </div>
         </div>
 
         {/* Collapsible Telemetry / Logs */}
         {showLogs && (
           <div className="p-3 bg-black/60 border border-slate-800 rounded-xl text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto space-y-1">
-            <div className="text-slate-500">// LankaEdu LMS Subsystem Diagnostics</div>
+            <div className="text-slate-500">// EduCore LMS Subsystem Diagnostics</div>
             <div>[IndexedDB]: Persistence active: {String(isOfflinePersistenceActive)}</div>
             <div>[PostgreSQL]: Host: Cloud SQL (asia-south1)</div>
             <div>[Supabase]: Table sync users, mark_submissions, curriculum_standards</div>
-            <div>[Curriculum]: Ministry of Education grading logic loaded (A: 75+, B: 65+, C: 55+, S: 35+, W: &lt;35)</div>
+            <div>[Curriculum]: Academic grading scale active (A: 75+, B: 65+, C: 50+, S: 35+, W: &lt;35)</div>
             {backendMeta && (
               <div>[API]: {backendMeta.database} | Items: {backendMeta.curriculumItemsLoaded}</div>
             )}

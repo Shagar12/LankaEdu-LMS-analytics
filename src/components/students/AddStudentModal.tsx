@@ -53,7 +53,7 @@ export const AddStudentModal: React.FC<AddStudentModalProps> = ({ onClose }) => 
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Enroll Student in National Curriculum
+                Enroll Student in Academic Curriculum
               </h3>
               <p className="text-xs text-slate-500">
                 Register student profile and initialize mark sheets

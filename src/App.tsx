@@ -134,13 +134,13 @@ const LMSDashboardContent: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 dark:text-slate-400 gap-2">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700 dark:text-slate-300">
-              LankaEdu LMS & Analytics System
+              EduCore LMS & Analytics System
             </span>
             <span>·</span>
-            <span>Sri Lankan National Curriculum (Grades 1–13)</span>
+            <span>Standard Academic Curriculum (Grades 1–13)</span>
           </div>
           <div>
-            <span>Ministry of Education Grading Standards Automated · 2026 Academic Cycle</span>
+            <span>Academic Grading Standards Automated · 2026 Academic Cycle</span>
           </div>
         </div>
       </footer>

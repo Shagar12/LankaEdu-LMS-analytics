@@ -46,8 +46,8 @@ export function generateInitialMockStudents(): Student[] {
         // Student profile archetype
         // Archetype 0: High flyer (Potential 9 A's or high 80s-90s)
         // Archetype 1: Good B/A student (65-80)
-        // Archetype 2: Solid Credit student (55-70)
-        // Archetype 3: Ordinary Pass student (40-60)
+        // Archetype 2: Solid Credit student (50-70)
+        // Archetype 3: Ordinary Pass student (35-49)
         // Archetype 4: Needs Support / weak in 1-2 subjects (25-45)
         const archetype = i % 5;
 
@@ -64,9 +64,9 @@ export function generateInitialMockStudents(): Student[] {
           } else if (archetype === 1) {
             baseMark = 68 + ((studentCounter + subIdx) % 18); // 68 - 85
           } else if (archetype === 2) {
-            baseMark = 55 + ((studentCounter + subIdx) % 18); // 55 - 72
+            baseMark = 50 + ((studentCounter + subIdx) % 20); // 50 - 69
           } else if (archetype === 3) {
-            baseMark = 42 + ((studentCounter + subIdx) % 20); // 42 - 61
+            baseMark = 36 + ((studentCounter + subIdx) % 14); // 36 - 49
           } else {
             // Struggling student
             baseMark = 28 + ((studentCounter + subIdx) % 25); // 28 - 52
@@ -87,7 +87,7 @@ export function generateInitialMockStudents(): Student[] {
           term3Marks[sub.id] = Math.min(100, Math.max(15, baseMark + delta3));
         });
 
-        // Add 1 student in 10-A and 11-A with pure 9 A's guaranteed (a celebrated milestone in Sri Lanka)
+        // Add 1 student in 10-A and 11-A with pure 9 A's guaranteed (a celebrated milestone in school records)
         if ((grade === 10 || grade === 11) && division === 'A' && i === 0) {
           subjects.forEach((sub) => {
             term1Marks[sub.id] = 88;

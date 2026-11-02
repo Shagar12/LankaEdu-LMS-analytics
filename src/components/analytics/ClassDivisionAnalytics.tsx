@@ -1,7 +1,7 @@
 import React from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { GradeLetter, Division } from '../../types/lms';
-import { SRI_LANKAN_GRADE_RULES } from '../../utils/grading';
+import { STANDARD_GRADE_RULES } from '../../utils/grading';
 import '../charts/ChartSetup';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import {
@@ -95,7 +95,7 @@ export const ClassDivisionAnalytics: React.FC = () => {
   // 2. Chart: Grade Letter Distribution in Current Class (A, B, C, S, W)
   const gradeLetters: GradeLetter[] = ['A', 'B', 'C', 'S', 'W'];
   const gradeDistributionData = {
-    labels: gradeLetters.map((l) => `${l} (${SRI_LANKAN_GRADE_RULES[l].label})`),
+    labels: gradeLetters.map((l) => `${l} (${STANDARD_GRADE_RULES[l].label})`),
     datasets: [
       {
         data: gradeLetters.map((l) => currentClassStats.gradeDistribution[l] || 0),
@@ -153,7 +153,7 @@ export const ClassDivisionAnalytics: React.FC = () => {
               Academic Analytics & Comparative Intelligence
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Automated Sri Lankan grading analysis, inter-division benchmarking, and subject performance rankings
+              Automated grading analysis, inter-division benchmarking, and subject performance rankings
             </p>
           </div>
 
@@ -250,7 +250,7 @@ export const ClassDivisionAnalytics: React.FC = () => {
             <div>
               <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <PieIcon className="w-4 h-4 text-indigo-500" />
-                Overall Sri Lankan Grade Distribution (A, B, C, S, W)
+                Overall Grade Distribution (A, B, C, S, W)
               </h2>
               <p className="text-xs text-slate-500">
                 Distribution of assigned letter grades across all student subject papers in Grade {selectedGrade}-{selectedDivision}

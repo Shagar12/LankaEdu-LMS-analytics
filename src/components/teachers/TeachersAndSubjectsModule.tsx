@@ -320,7 +320,7 @@ export const TeachersAndSubjectsModule: React.FC = () => {
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-xs">
           <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-              National Curriculum Subject Registry
+              Curriculum Subject Registry
             </h2>
             <span className="text-xs text-slate-500">
               Total: {subjects.length} Subjects
@@ -848,7 +848,7 @@ const SubjectModal: React.FC<SubjectModalProps> = ({ subject, onClose }) => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Applicable Sri Lankan Grades (Select at least one) *
+              Applicable Grades (Select at least one) *
             </label>
             <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((g) => {

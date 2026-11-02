@@ -162,7 +162,7 @@ export const DataManagement: React.FC = () => {
   const handleResetData = () => {
     if (window.confirm('Reset all grades, student records, and marks back to standard demonstration datasets?')) {
       resetToDemoData();
-      alert('LMS data reset to Sri Lankan national curriculum default benchmark.');
+      alert('LMS data reset to standard academic curriculum default benchmark.');
     }
   };
 
@@ -239,7 +239,7 @@ export const DataManagement: React.FC = () => {
               Import Mark Sheets via CSV
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Upload class mark sheets populated by subject teachers. The system validates mark ranges (0–100) and automatically recalculates Sri Lankan letter grades and rankings.
+              Upload class mark sheets populated by subject teachers. The system validates mark ranges (0–100) and automatically recalculates letter grades and rankings.
             </p>
 
             <div className="mb-4">

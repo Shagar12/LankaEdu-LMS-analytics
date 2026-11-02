@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "LankaEdu LMS Firestore Database Blueprint",
-  "description": "Firestore schema and access control specifications for LankaEdu LMS Sri Lankan School Management System",
+  "title": "EduCore LMS Firestore Database Blueprint",
+  "description": "Firestore schema and access control specifications for EduCore LMS Academic School Management System",
   "entities": {
     "settings": {
       "description": "System settings including administrator configuration",
@@ -84,7 +84,7 @@
         },
         "employeeId": {
           "type": "string",
-          "description": "Sri Lankan Ministry/School Employee ID (e.g. EMP-4001)"
+          "description": "Academic Ministry/School Employee ID (e.g. EMP-4001)"
         },
         "fullName": {
           "type": "string",
@@ -130,7 +130,7 @@
       "required": ["id", "employeeId", "fullName", "password", "updatedAt"]
     },
     "users": {
-      "description": "User profiles, registration status, and assigned school role for LankaEdu LMS onboarding",
+      "description": "User profiles, registration status, and assigned school role for EduCore LMS onboarding",
       "path": "users/{userId}",
       "fields": {
         "id": {

@@ -209,6 +209,8 @@ interface LMSContextType {
   approveMarksSubmission: (submissionId: string) => void;
   getSubmissionStatus: (subjectId: string, grade: GradeLevel, division: Division, term: TermNumber) => MarkSubmissionStatus;
   isSubjectEditableByCurrentRole: (subjectId: string, grade: GradeLevel, division: Division) => boolean;
+  isCurrentTeacherClassTeacherOf: (grade: GradeLevel, division: Division) => boolean;
+  isCurrentTeacherSubjectTeacherOf: (subjectId: string, grade: GradeLevel, division: Division) => boolean;
 
   // Firebase Real-time Multi-Device Sync & Offline Persistence
   isFirebaseConnected: boolean;
@@ -237,20 +239,20 @@ interface LMSContextType {
 
 const LMSContext = createContext<LMSContextType | undefined>(undefined);
 
-const STUDENTS_STORAGE_KEY = 'lankaedu_lms_records_v1';
-const TEACHERS_STORAGE_KEY = 'lankaedu_teachers_v1';
-const SUBJECTS_STORAGE_KEY = 'lankaedu_subjects_v1';
-const SUBMISSIONS_STORAGE_KEY = 'lankaedu_mark_submissions_v1';
-const ROLE_STORAGE_KEY = 'lankaedu_current_role_v1';
-const ADMIN_AUTH_STORAGE_KEY = 'lankaedu_admin_auth_v1';
-const ADMIN_AUTH_HASH_KEY = 'lankaedu_admin_auth_hash_v1';
-const ADMIN_REMEMBER_ME_KEY = 'lankaedu_admin_remember_me_v1';
-const LOGGED_TEACHER_STORAGE_KEY = 'lankaedu_logged_teacher_id_v1';
-const USERS_STORAGE_KEY = 'lankaedu_users_v1';
-const CURRENT_USER_STORAGE_KEY = 'lankaedu_current_user_v1';
-const THEME_KEY = 'lankaedu_theme_v1';
+const STUDENTS_STORAGE_KEY = 'educore_lms_records_v1';
+const TEACHERS_STORAGE_KEY = 'educore_teachers_v1';
+const SUBJECTS_STORAGE_KEY = 'educore_subjects_v1';
+const SUBMISSIONS_STORAGE_KEY = 'educore_mark_submissions_v1';
+const ROLE_STORAGE_KEY = 'educore_current_role_v1';
+const ADMIN_AUTH_STORAGE_KEY = 'educore_admin_auth_v1';
+const ADMIN_AUTH_HASH_KEY = 'educore_admin_auth_hash_v1';
+const ADMIN_REMEMBER_ME_KEY = 'educore_admin_remember_me_v1';
+const LOGGED_TEACHER_STORAGE_KEY = 'educore_logged_teacher_id_v1';
+const USERS_STORAGE_KEY = 'educore_users_v1';
+const CURRENT_USER_STORAGE_KEY = 'educore_current_user_v1';
+const THEME_KEY = 'educore_theme_v1';
 
-const ADMIN_PASSWORD_STORAGE_KEY = 'lankaedu_admin_password_v1';
+const ADMIN_PASSWORD_STORAGE_KEY = 'educore_admin_password_v1';
 
 export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Theme state
@@ -521,7 +523,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
 
   // System & RBAC Audit Trail state
-  const AUDIT_LOGS_STORAGE_KEY = 'lankaedu_audit_logs';
+  const AUDIT_LOGS_STORAGE_KEY = 'educore_audit_logs';
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => {
     try {
       const stored = localStorage.getItem(AUDIT_LOGS_STORAGE_KEY);
@@ -703,20 +705,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 2. Subscribe to Teacher credentials & updates in real time
       unsubscribeTeachers = subscribeToTeachers((remoteTeachers) => {
         if (remoteTeachers.length > 0) {
-          setTeachers((prev) => {
-            const hasChange =
-              remoteTeachers.length !== prev.length ||
-              remoteTeachers.some((rt) => {
-                const pt = prev.find((p) => p.id === rt.id);
-                return !pt || pt.password !== rt.password || pt.fullName !== rt.fullName;
-              });
-
-            if (hasChange) {
-              localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(remoteTeachers));
-              return remoteTeachers;
-            }
-            return prev;
-          });
+          setTeachers(remoteTeachers);
+          try {
+            localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(remoteTeachers));
+          } catch (e) {
+            console.error('Failed writing teachers to storage', e);
+          }
           setLastFirebaseSync(new Date().toLocaleTimeString());
         } else {
           seedTeachersToFirestore(INITIAL_MOCK_TEACHERS).catch((err) =>
@@ -849,9 +843,22 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Currently logged in teacher object
   const currentTeacher = useMemo(() => {
-    if (!loggedTeacherId) return null;
-    return teachers.find((t) => t.id === loggedTeacherId || t.employeeId === loggedTeacherId) || null;
-  }, [teachers, loggedTeacherId]);
+    if (loggedTeacherId) {
+      const found = teachers.find((t) => t.id === loggedTeacherId || t.employeeId === loggedTeacherId);
+      if (found) return found;
+    }
+    if (currentUser && currentUser.assignedRole === 'teacher') {
+      const cleanEmail = currentUser.email?.toLowerCase().trim();
+      const cleanName = (currentUser.fullName || currentUser.name)?.toLowerCase().trim();
+      const found = teachers.find(
+        (t) =>
+          (cleanEmail && t.email?.toLowerCase().trim() === cleanEmail) ||
+          (cleanName && t.fullName?.toLowerCase().trim() === cleanName)
+      );
+      if (found) return found;
+    }
+    return null;
+  }, [teachers, loggedTeacherId, currentUser]);
 
   // Record Audit Trail Event across Firebase and PostgreSQL Cloud SQL
   const logAuditEvent = (event: Omit<AuditLogEntry, 'id' | 'timestamp'>) => {
@@ -946,23 +953,52 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return teachers.find((t) => t.isClassTeacherOf?.grade === grade && t.isClassTeacherOf?.division === division);
   };
 
-  // RBAC Permission Checker: can current user edit a specific subject in a specific class?
+  // Helper: check if current logged-in teacher is appointed class teacher of grade & division
+  const isCurrentTeacherClassTeacherOf = (grade: GradeLevel, division: Division): boolean => {
+    if (!currentTeacher || !currentTeacher.isClassTeacherOf) return false;
+    return (
+      currentTeacher.isClassTeacherOf.grade === grade &&
+      currentTeacher.isClassTeacherOf.division === division
+    );
+  };
+
+  // Helper: check if current logged-in teacher is appointed subject teacher for that subject in grade & division
+  const isCurrentTeacherSubjectTeacherOf = (subjectId: string, grade: GradeLevel, division: Division): boolean => {
+    if (!currentTeacher) return false;
+    return currentTeacher.assignments.some(
+      (asgn) =>
+        asgn.subjectId === subjectId &&
+        asgn.grade === grade &&
+        (asgn.division === 'all' || asgn.division === division)
+    );
+  };
+
+  // RBAC Permission Checker:
+  // 1. Appointed Class Teacher can change all students' marks across all subjects in their class.
+  // 2. Subject Teacher can change ONLY the marks for their appointed subject(s) in that class.
+  // 3. Admin can change all marks.
+  // 4. Parents & Students are 100% read-only.
   const isSubjectEditableByCurrentRole = (subjectId: string, grade: GradeLevel, division: Division): boolean => {
     if (currentRole === 'admin') {
       return isAdminAuthenticated;
     }
-    if (currentRole === 'parent') {
-      return false; // Parent is 100% read-only
+    if (currentRole === 'parent' || currentRole === 'student') {
+      return false; // Parent and Student are 100% read-only
     }
     if (currentRole === 'teacher') {
       if (!currentTeacher) return false;
-      // Check if this teacher is assigned to this subject, grade and division
-      return currentTeacher.assignments.some(
-        (asgn) =>
-          asgn.subjectId === subjectId &&
-          asgn.grade === grade &&
-          (asgn.division === 'all' || asgn.division === division)
-      );
+
+      // RULE 1: APPOINTED CLASS TEACHER CAN CHANGE ALL STUDENTS' MARKS IN THAT CLASS
+      if (isCurrentTeacherClassTeacherOf(grade, division)) {
+        return true;
+      }
+
+      // RULE 2: SUBJECT TEACHER CAN CHANGE ONLY THE MARKS THEY ARE APPOINTED SUBJECT TO THE CLASS
+      if (isCurrentTeacherSubjectTeacherOf(subjectId, grade, division)) {
+        return true;
+      }
+
+      return false;
     }
     return false;
   };
@@ -1857,23 +1893,75 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const updateTeacher = (id: string, updates: Partial<Teacher>) => {
+    let affectedOtherTeacher: Teacher | null = null;
+    let updatedTarget: Teacher | null = null;
+
     setTeachers((prev) => {
-      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
-      const target = next.find((t) => t.id === id);
-      if (target) {
-        syncTeacherToFirestore(target).catch((err) =>
-          console.warn('Teacher update Firestore sync warning:', err)
-        );
-      }
+      const next = prev.map((t) => {
+        // If this teacher is being assigned as class teacher of grade & division, clear any other teacher who had that class
+        if (
+          updates.isClassTeacherOf &&
+          t.id !== id &&
+          t.isClassTeacherOf?.grade === updates.isClassTeacherOf.grade &&
+          t.isClassTeacherOf?.division === updates.isClassTeacherOf.division
+        ) {
+          const cleared: Teacher = { ...t, isClassTeacherOf: undefined };
+          affectedOtherTeacher = cleared;
+          return cleared;
+        }
+        if (t.id === id) {
+          const updated = { ...t, ...updates };
+          updatedTarget = updated;
+          return updated;
+        }
+        return t;
+      });
       return next;
     });
+
+    if (updatedTarget) {
+      syncTeacherToFirestore(updatedTarget).catch((err) =>
+        console.warn('Teacher update Firestore sync warning:', err)
+      );
+      if (updates.isClassTeacherOf) {
+        logAuditEvent({
+          actorName: isAdmin ? 'Master Administrator' : 'Academic Registrar',
+          actorRole: 'admin',
+          action: 'TEACHER_ASSIGN',
+          actionTitle: 'Class Teacher Appointed',
+          details: `Appointed ${(updatedTarget as Teacher).fullName} as Class Teacher for Grade ${updates.isClassTeacherOf.grade}-${updates.isClassTeacherOf.division}. Granted full marks editing authority across all students and subjects in this class.`,
+          targetEntity: `Grade ${updates.isClassTeacherOf.grade}-${updates.isClassTeacherOf.division} (${(updatedTarget as Teacher).fullName})`,
+          grade: updates.isClassTeacherOf.grade,
+          division: updates.isClassTeacherOf.division,
+          severity: 'success',
+        });
+      }
+    }
+
+    if (affectedOtherTeacher) {
+      syncTeacherToFirestore(affectedOtherTeacher).catch((err) =>
+        console.warn('Previous class teacher sync note:', err)
+      );
+    }
   };
 
   const deleteTeacher = (id: string) => {
+    const deleted = teachers.find((t) => t.id === id);
     setTeachers((prev) => prev.filter((t) => t.id !== id));
     deleteTeacherFromFirestore(id).catch((err) =>
       console.warn('Firestore teacher deletion sync warning:', err)
     );
+    if (deleted) {
+      logAuditEvent({
+        actorName: isAdmin ? 'Master Administrator' : 'Staff',
+        actorRole: 'admin',
+        action: 'TEACHER_ASSIGN',
+        actionTitle: 'Teacher Profile Deleted',
+        details: `Deleted teacher profile for ${deleted.fullName} (${deleted.employeeId}).`,
+        targetEntity: deleted.fullName,
+        severity: 'critical',
+      });
+    }
   };
 
   const assignTeacherToSubject = (
@@ -1882,6 +1970,7 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     grade: GradeLevel,
     division: Division | 'all'
   ) => {
+    let assignedTeacher: Teacher | null = null;
     setTeachers((prev) => {
       const next = prev.map((t) => {
         if (t.id !== teacherId) return t;
@@ -1891,10 +1980,12 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           grade,
           division,
         };
-        return {
+        const updated = {
           ...t,
           assignments: [...t.assignments, newAsgn],
         };
+        assignedTeacher = updated;
+        return updated;
       });
       const target = next.find((t) => t.id === teacherId);
       if (target) {
@@ -1904,16 +1995,35 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return next;
     });
+
+    const subjectObj = subjects.find((s) => s.id === subjectId);
+    const teacherObj = assignedTeacher || teachers.find((t) => t.id === teacherId);
+    if (teacherObj) {
+      logAuditEvent({
+        actorName: isAdmin ? 'Master Administrator' : 'Staff',
+        actorRole: 'admin',
+        action: 'TEACHER_ASSIGN',
+        actionTitle: 'Teacher Assigned to Subject',
+        details: `Assigned ${(teacherObj as Teacher).fullName} (${(teacherObj as Teacher).employeeId}) to teach ${subjectObj?.name || subjectId} for Grade ${grade}${division === 'all' ? ' (All Divisions)' : `-${division}`}.`,
+        targetEntity: `${(teacherObj as Teacher).fullName} · ${subjectObj?.shortName || subjectId}`,
+        grade,
+        division: division === 'all' ? undefined : division,
+        severity: 'info',
+      });
+    }
   };
 
   const removeTeacherAssignment = (teacherId: string, assignmentId: string) => {
+    let updatedTeacher: Teacher | null = null;
     setTeachers((prev) => {
       const next = prev.map((t) => {
         if (t.id !== teacherId) return t;
-        return {
+        const updated = {
           ...t,
           assignments: t.assignments.filter((a) => a.id !== assignmentId),
         };
+        updatedTeacher = updated;
+        return updated;
       });
       const target = next.find((t) => t.id === teacherId);
       if (target) {
@@ -1923,6 +2033,18 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
       return next;
     });
+
+    if (updatedTeacher) {
+      logAuditEvent({
+        actorName: isAdmin ? 'Master Administrator' : 'Staff',
+        actorRole: 'admin',
+        action: 'TEACHER_ASSIGN',
+        actionTitle: 'Subject Assignment Revoked',
+        details: `Revoked subject allocation from ${(updatedTeacher as Teacher).fullName} (${(updatedTeacher as Teacher).employeeId}).`,
+        targetEntity: (updatedTeacher as Teacher).fullName,
+        severity: 'warning',
+      });
+    }
   };
 
   // Subject methods with real-time Firestore synchronization
@@ -2343,6 +2465,8 @@ export const LMSProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         approveMarksSubmission,
         getSubmissionStatus,
         isSubjectEditableByCurrentRole,
+        isCurrentTeacherClassTeacherOf,
+        isCurrentTeacherSubjectTeacherOf,
         // Firebase Multi-Device Synchronization & Offline Persistence
         isFirebaseConnected,
         isFirebaseSyncing,

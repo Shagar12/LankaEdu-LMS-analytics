@@ -273,7 +273,7 @@ export function subscribeToTeachers(
  */
 export const MASTER_ADMIN_EMAILS = [
   'sangeethshagar@gmail.com',
-  'admin@lankaedu.lk',
+  'admin@educore.edu',
   'admin@lms.lk',
 ];
 

@@ -236,7 +236,7 @@ export const StudentListView: React.FC<StudentListViewProps> = ({ onOpenAddStude
                     <th className="py-3 px-3 font-semibold text-right">Attendance</th>
                     <th className="py-3 px-3 font-semibold text-right">Total Marks</th>
                     <th className="py-3 px-3 font-semibold text-right">Average %</th>
-                    <th className="py-3 px-4 font-semibold text-center">Sri Lankan Grade Breakdown</th>
+                    <th className="py-3 px-4 font-semibold text-center">Grade Breakdown</th>
                     <th className="py-3 px-4 font-semibold text-right">Action</th>
                   </tr>
                 </thead>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { TermNumber, GradeLetter } from '../../types/lms';
-import { SRI_LANKAN_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
+import { STANDARD_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
 import '../charts/ChartSetup';
 import { Bar, Radar, Line } from 'react-chartjs-2';
 import {
@@ -124,7 +124,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
         borderWidth: 2,
       },
       {
-        label: 'Sri Lankan Distinction (75%)',
+        label: 'Distinction Standard (75%)',
         data: currentSubjects.map(() => 75),
         borderColor: 'rgba(16, 185, 129, 0.6)',
         borderDash: [4, 4],
@@ -374,10 +374,10 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
 
           {activeSubTab === 'performance' ? (
             <>
-              {/* Summary Grade Pill Breakdown (Sri Lankan A, B, C, S, W) */}
+              {/* Summary Grade Pill Breakdown (Academic A, B, C, S, W) */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {(['A', 'B', 'C', 'S', 'W'] as GradeLetter[]).map((letter) => {
-                  const rule = SRI_LANKAN_GRADE_RULES[letter];
+                  const rule = STANDARD_GRADE_RULES[letter];
                   const count = currentTermRecord?.gradeCounts[letter] || 0;
                   return (
                     <div
@@ -404,7 +404,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
               <div className="bg-white dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
                 <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-700/60 flex items-center justify-between">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                    Subject Score & Automated Sri Lankan Grading
+                    Subject Score & Automated Academic Grading
                   </h3>
                   <span className="text-xs text-slate-400">
                     {currentSubjects.length} Curricular Subjects
@@ -514,7 +514,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
               </div>
             </>
           ) : (
-            /* Printable Sri Lankan Term Report Card with Linked Faculty */
+            /* Printable Term Report Card with Linked Faculty */
             <div className="report-card-container bg-white text-slate-900 p-8 rounded-lg border border-slate-300 dark:border-slate-700 max-w-4xl mx-auto shadow-sm">
               
               {/* Report Card Header */}
@@ -524,7 +524,7 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
                     LK
                   </div>
                   <h1 className="text-xl font-bold tracking-tight uppercase">
-                    SRI LANKA MINISTRY OF EDUCATION CURRICULUM
+                    OFFICIAL ACADEMIC CURRICULUM REPORT
                   </h1>
                 </div>
                 <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-700">
@@ -623,14 +623,14 @@ export const StudentDetailModal: React.FC<StudentDetailModalProps> = ({ studentI
                 </tbody>
               </table>
 
-              {/* Sri Lankan Grading Standard Guide */}
+              {/* Grading Standard Guide */}
               <div className="bg-slate-50 p-3 rounded border border-slate-200 mb-6 text-[11px] text-slate-600">
-                <span className="font-bold text-slate-900 block mb-1">Sri Lankan National Grading Scheme:</span>
+                <span className="font-bold text-slate-900 block mb-1">Official Academic Grading Scheme:</span>
                 <div className="flex flex-wrap gap-4">
                   <span><strong>A:</strong> 75–100% (Distinction)</span>
                   <span><strong>B:</strong> 65–74% (Very Good Pass)</span>
-                  <span><strong>C:</strong> 55–64% (Credit Pass)</span>
-                  <span><strong>S:</strong> 35–54% (Ordinary Pass)</span>
+                  <span><strong>C:</strong> 50–64% (Credit Pass)</span>
+                  <span><strong>S:</strong> 35–49% (Ordinary Pass)</span>
                   <span><strong>W:</strong> 0–34% (Weak / Fail)</span>
                 </div>
               </div>

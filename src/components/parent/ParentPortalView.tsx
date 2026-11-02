@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useLMS } from '../../context/LMSContext';
 import { TermNumber, GradeLetter, Student } from '../../types/lms';
-import { SRI_LANKAN_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
+import { STANDARD_GRADE_RULES, getGradeFromMark, recalculateStudentGrades } from '../../utils/grading';
 import '../charts/ChartSetup';
 import { Bar, Radar, Line } from 'react-chartjs-2';
 import { searchStudentByIndexFromFirestore } from '../../lib/firebase';
@@ -107,7 +107,8 @@ export const ParentPortalView: React.FC = () => {
     try {
       const serverFound = await searchStudentByIndexFromFirestore(query);
       if (serverFound) {
-        setActiveStudent(serverFound);
+        const recalculated = recalculateStudentGrades(serverFound);
+        setActiveStudent(recalculated);
         setHasSearched(true);
         logAuditEvent({
           actorName: `Parent / Guardian of ${serverFound.fullName}`,
@@ -204,7 +205,7 @@ export const ParentPortalView: React.FC = () => {
         borderRadius: 4,
       },
       {
-        label: 'Sri Lankan Distinction (75%)',
+        label: 'Distinction Standard (75%)',
         data: applicableSubjects.map(() => 75),
         backgroundColor: 'rgba(16, 185, 129, 0.25)',
         borderColor: 'rgb(16, 185, 129)',
@@ -360,7 +361,7 @@ export const ParentPortalView: React.FC = () => {
               Official Student Academic Progress & Results Lookup
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-              Enter your child's Examination Index Number (found on their school admission or ID card) to view official term results, automated Sri Lankan letter grades, and performance analytics.
+              Enter your child's Examination Index Number (found on their school admission or ID card) to view official term results, automated letter grades, and performance analytics.
             </p>
           </div>
 
@@ -541,7 +542,7 @@ export const ParentPortalView: React.FC = () => {
                     ? 'Distinction Standard'
                     : currentTermRecord && currentTermRecord.average >= 65
                     ? 'Very Good Standard'
-                    : currentTermRecord && currentTermRecord.average >= 55
+                    : currentTermRecord && currentTermRecord.average >= 50
                     ? 'Credit Standard'
                     : 'Passing Standard'}
                 </span>
@@ -567,10 +568,10 @@ export const ParentPortalView: React.FC = () => {
             </div>
           </div>
 
-          {/* National Sri Lankan Letter Grade Counts (A, B, C, S, W) */}
+          {/* Standard Letter Grade Counts (A, B, C, S, W) */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {(['A', 'B', 'C', 'S', 'W'] as GradeLetter[]).map((letter) => {
-              const rule = SRI_LANKAN_GRADE_RULES[letter];
+              const rule = STANDARD_GRADE_RULES[letter];
               const count = currentTermRecord?.gradeCounts[letter] || 0;
               return (
                 <div
@@ -606,7 +607,7 @@ export const ParentPortalView: React.FC = () => {
                   Term {selectedTerm} Official Subject Marks & Grade Breakdown
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Automated grade assignment adhering to standard Sri Lankan Ministry of Education rules
+                  Automated grade assignment adhering to standard Ministry of Education rules
                 </p>
               </div>
               <span className="text-xs text-slate-400 font-mono">
@@ -673,7 +674,7 @@ export const ParentPortalView: React.FC = () => {
               <div className="mb-3">
                 <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <BarChart3 className="w-4 h-4 text-indigo-500" />
-                  Subject Marks vs. Sri Lankan Distinction Standard
+                  Subject Marks vs. Distinction Standard
                 </h3>
               </div>
               <div className="h-64">
@@ -717,7 +718,7 @@ export const ParentPortalView: React.FC = () => {
                   LK
                 </div>
                 <h1 className="text-xl font-bold tracking-tight uppercase">
-                  SRI LANKA MINISTRY OF EDUCATION CURRICULUM
+                  OFFICIAL ACADEMIC CURRICULUM REPORT
                 </h1>
               </div>
               <h2 className="text-sm font-semibold tracking-wide uppercase text-slate-700">

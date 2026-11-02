@@ -27,7 +27,7 @@
   background: rgba(148, 163, 184, 0.7);
 }
 
-/* Print optimizations for Sri Lankan Student Report Cards */
+/* Print optimizations for Student Report Cards */
 @media print {
   body {
     background-color: #ffffff !important;

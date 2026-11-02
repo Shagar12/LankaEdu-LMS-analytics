@@ -36,10 +36,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenAddStudent, onOpenBootload
             </div>
             <div className="flex flex-col">
               <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white leading-tight">
-                LankaEdu LMS
+                EduCore LMS
               </span>
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-none">
-                Sri Lankan Curriculum Analytics
+                Curriculum Academic Analytics
               </span>
             </div>
           </div>

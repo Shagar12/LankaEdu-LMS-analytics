@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLMS } from '../../context/LMSContext';
-import { SRI_LANKAN_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
+import { STANDARD_GRADE_RULES, getGradeFromMark } from '../../utils/grading';
 import {
   Save,
   RotateCcw,
@@ -43,6 +43,8 @@ export const BatchMarkEntry: React.FC = () => {
     markSubmissions,
     isOnline,
     isOfflinePersistenceActive,
+    isCurrentTeacherClassTeacherOf,
+    isCurrentTeacherSubjectTeacherOf,
   } = useLMS();
 
   // Local state for mark grid: studentId -> subjectId -> number
@@ -123,7 +125,9 @@ export const BatchMarkEntry: React.FC = () => {
     setHasChanges(false);
 
     if (currentRole === 'teacher' && currentTeacher) {
-      // Find subjects this teacher teaches in this class
+      const isClassTeacher = isCurrentTeacherClassTeacherOf(selectedGrade, selectedDivision);
+
+      // Find subjects this teacher can edit in this class
       const teacherSubjects = currentSubjects.filter((sub) =>
         isSubjectEditableByCurrentRole(sub.id, selectedGrade, selectedDivision)
       );
@@ -135,15 +139,23 @@ export const BatchMarkEntry: React.FC = () => {
           selectedDivision,
           selectedTerm,
           instantSaveMode
-            ? 'Direct instant entry by faculty instructor'
-            : 'Submitted for administrative approval & verification'
+            ? isClassTeacher
+              ? `Direct instant entry by Appointed Class Teacher (${currentTeacher.fullName})`
+              : 'Direct instant entry by faculty instructor'
+            : isClassTeacher
+              ? `Certified by Appointed Class Teacher (${currentTeacher.fullName}) for Administrator verification`
+              : 'Submitted for administrative approval & verification'
         );
       });
 
       setSubmissionFeedback(
         instantSaveMode
-          ? 'Marks saved and certified successfully!'
-          : `Marks for ${teacherSubjects.map((s) => s.shortName).join(', ')} submitted for Administrator Review!`
+          ? isClassTeacher
+            ? `All ${teacherSubjects.length} subjects for Grade ${selectedGrade}-${selectedDivision} saved & certified in real-time!`
+            : 'Marks saved and certified successfully in real-time!'
+          : isClassTeacher
+            ? `All ${teacherSubjects.length} class subjects for Grade ${selectedGrade}-${selectedDivision} submitted for Administrator Review!`
+            : `Marks for ${teacherSubjects.map((s) => s.shortName).join(', ')} submitted for Administrator Review!`
       );
       setTimeout(() => setSubmissionFeedback(''), 4500);
     }
@@ -197,10 +209,17 @@ export const BatchMarkEntry: React.FC = () => {
                   <span>Admin Authority (All Subjects Unlocked)</span>
                 </span>
               ) : currentRole === 'teacher' ? (
-                <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 flex items-center gap-1">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Teacher Access: {currentTeacher?.fullName} (Assigned Subjects Only)</span>
-                </span>
+                isCurrentTeacherClassTeacherOf(selectedGrade, selectedDivision) ? (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950/80 text-indigo-900 dark:text-indigo-200 border border-indigo-300 dark:border-indigo-800 flex items-center gap-1.5 shadow-xs">
+                    <Unlock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Appointed Class Teacher · Full Marks Clearance (All Subjects Unlocked)</span>
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                    <Lock className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Subject Teacher ({currentTeacher?.fullName}) · Appointed Subjects Only</span>
+                  </span>
+                )
               ) : (
                 <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
                   Parent Mode: Read-Only
@@ -238,7 +257,7 @@ export const BatchMarkEntry: React.FC = () => {
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {currentRole === 'teacher'
                 ? `You can enter and update marks for your assigned subjects in Grade ${selectedGrade}-${selectedDivision}. Other subjects are locked.`
-                : 'Spreadsheet-style bulk mark entry with live calculation of Total Marks, Average %, and Sri Lankan letter grades (A, B, C, S, W)'}
+                : 'Spreadsheet-style bulk mark entry with live calculation of Total Marks, Average %, and letter grades (A, B, C, S, W)'}
             </p>
           </div>
 
@@ -404,30 +423,44 @@ export const BatchMarkEntry: React.FC = () => {
                   const teacher = getTeacherForSubject(sub.id, selectedGrade, selectedDivision);
                   const isEditable = isSubjectEditableByCurrentRole(sub.id, selectedGrade, selectedDivision);
                   const submissionStatus = getSubmissionStatus(sub.id, selectedGrade, selectedDivision, selectedTerm);
+                  const isClassTeacher = isCurrentTeacherClassTeacherOf(selectedGrade, selectedDivision);
+                  const isSubjectTeacher = isCurrentTeacherSubjectTeacherOf(sub.id, selectedGrade, selectedDivision);
+
+                  const unlockReason = isClassTeacher
+                    ? `Unlocked: Appointed Class Teacher for Grade ${selectedGrade}-${selectedDivision} (Full Class Marks Authority)`
+                    : isSubjectTeacher
+                    ? `Unlocked: Appointed Subject Teacher for ${sub.name}`
+                    : currentRole === 'admin'
+                    ? 'Unlocked: Administrator Authority'
+                    : 'Editable';
+
+                  const lockReason = `Locked: Only the Appointed Class Teacher (${currentClassTeacher?.fullName || 'Not appointed'}) or Appointed Subject Teacher (${teacher?.fullName || 'Not assigned'}) can modify these marks.`;
 
                   return (
                     <th
                       key={sub.id}
                       className={`py-2 px-2.5 font-bold text-center min-w-[120px] border-r border-slate-200 dark:border-slate-700/60 transition-colors ${
                         isEditable
-                          ? 'bg-emerald-50/50 dark:bg-emerald-950/20'
+                          ? isClassTeacher
+                            ? 'bg-indigo-50/60 dark:bg-indigo-950/30'
+                            : 'bg-emerald-50/50 dark:bg-emerald-950/20'
                           : 'bg-slate-100/50 dark:bg-slate-800/40 text-slate-500'
                       }`}
                     >
                       <div className="flex items-center justify-center gap-1">
                         <span className="truncate font-semibold">{sub.shortName}</span>
                         {isEditable ? (
-                          <span title="Editable by you">
-                            <Unlock className="w-3 h-3 text-emerald-600" />
+                          <span title={unlockReason}>
+                            <Unlock className={`w-3 h-3 ${isClassTeacher ? 'text-indigo-600 dark:text-indigo-400' : 'text-emerald-600'}`} />
                           </span>
                         ) : (
-                          <span title={`Locked: Assigned to ${teacher?.fullName || 'another instructor'}`}>
+                          <span title={lockReason}>
                             <Lock className="w-3 h-3 text-slate-400" />
                           </span>
                         )}
                       </div>
                       
-                      <div className="text-[10px] text-slate-400 font-normal truncate max-w-[120px] mt-0.5">
+                      <div className="text-[10px] text-slate-400 font-normal truncate max-w-[120px] mt-0.5" title={teacher?.fullName || 'Unassigned'}>
                         {teacher ? teacher.fullName.split(' ')[0] + ' ' + (teacher.fullName.split(' ')[1] || '') : 'Staff'}
                       </div>
 
@@ -490,12 +523,17 @@ export const BatchMarkEntry: React.FC = () => {
                       const gradeInfo = getGradeFromMark(currentVal);
                       const isInvalid = currentVal > 100 || currentVal < 0;
                       const isEditable = isSubjectEditableByCurrentRole(sub.id, selectedGrade, selectedDivision);
+                      const isClassTeacher = isCurrentTeacherClassTeacherOf(selectedGrade, selectedDivision);
 
                       return (
                         <td
                           key={sub.id}
                           className={`p-1.5 border-r border-slate-100 dark:border-slate-800 text-center ${
-                            isEditable ? 'bg-emerald-50/20 dark:bg-emerald-950/10' : 'bg-slate-50/60 dark:bg-slate-800/20'
+                            isEditable
+                              ? isClassTeacher
+                                ? 'bg-indigo-50/20 dark:bg-indigo-950/10'
+                                : 'bg-emerald-50/20 dark:bg-emerald-950/10'
+                              : 'bg-slate-50/60 dark:bg-slate-800/20'
                           }`}
                         >
                           <div className="flex items-center justify-center gap-1">
@@ -512,12 +550,16 @@ export const BatchMarkEntry: React.FC = () => {
                                   ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-500 border-slate-200 dark:border-slate-700/50 cursor-not-allowed opacity-80'
                                   : isInvalid
                                   ? 'border-red-500 bg-red-50 text-red-700'
+                                  : isClassTeacher
+                                  ? 'border-indigo-300 dark:border-indigo-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500'
                                   : 'border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500'
                               }`}
                               title={
                                 !isEditable
-                                  ? 'Locked: You do not have teaching clearance for this subject'
-                                  : `Edit mark (0-100) for ${sub.name}`
+                                  ? 'Locked: Only Appointed Class Teacher or Subject Teacher can enter marks'
+                                  : isClassTeacher
+                                  ? `Edit mark (0-100) for ${sub.name} - Unlocked via Appointed Class Teacher clearance`
+                                  : `Edit mark (0-100) for ${sub.name} - Unlocked via Appointed Subject Teacher`
                               }
                             />
                             <span
@@ -575,10 +617,10 @@ export const BatchMarkEntry: React.FC = () => {
         </div>
       </div>
 
-      {/* Sri Lankan Grading Threshold Reference Strip */}
+      {/* Grading Threshold Reference Strip */}
       <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-xl border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
         <span className="font-bold text-slate-900 dark:text-white block mb-1">
-          Automated Sri Lankan National Grading Scale:
+          Automated Official Academic Grading Scale:
         </span>
         <div className="flex flex-wrap gap-4">
           <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
@@ -588,10 +630,10 @@ export const BatchMarkEntry: React.FC = () => {
             B (Very Good Pass): 65–74%
           </span>
           <span className="text-sky-700 dark:text-sky-400 font-semibold">
-            C (Credit Pass): 55–64%
+            C (Credit Pass): 50–64%
           </span>
           <span className="text-amber-700 dark:text-amber-400 font-semibold">
-            S (Ordinary Pass): 35–54%
+            S (Ordinary Pass): 35–49%
           </span>
           <span className="text-red-700 dark:text-red-400 font-semibold">
             W (Weak / Fail): 0–34%

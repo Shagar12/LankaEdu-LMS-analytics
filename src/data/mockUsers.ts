@@ -41,7 +41,7 @@ export const INITIAL_MOCK_USERS: LMSUser[] = [
     id: 'usr_pushpa_teacher',
     name: 'Mrs. Pushpa Kumarihamy',
     fullName: 'Mrs. Pushpa Kumarihamy',
-    email: 'pushpa.k@lankaedu.lk',
+    email: 'pushpa.k@educore.edu',
     phone: '+94 77 234 5678',
     password: 'teacher123',
     status: 'active',

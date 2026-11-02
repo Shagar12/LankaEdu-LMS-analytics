@@ -1,6 +1,6 @@
 import { integer, pgTable, serial, text, timestamp } from 'drizzle-orm/pg-core';
 
-// LankaEdu LMS Users table (synchronized with Firebase Auth & Profile)
+// EduCore LMS Users table (synchronized with Firebase Auth & Profile)
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   uid: text('uid').notNull().unique(), // Firebase Auth UID
@@ -31,14 +31,14 @@ export const markSubmissions = pgTable('mark_submissions', {
   updatedAt: timestamp('updated_at').defaultNow(),
 });
 
-// Sri Lankan National Curriculum standards cache & reference
+// Standard Academic Curriculum standards cache & reference
 export const curriculumStandards = pgTable('curriculum_standards', {
   id: serial('id').primaryKey(),
   grade: integer('grade').notNull(),
   stream: text('stream').default('general'), // 'general', 'commerce', 'bio_science', 'physical_science', 'arts', 'technology'
   subjectCode: text('subject_code').notNull(),
   subjectName: text('subject_name').notNull(),
-  creditPassMark: integer('credit_pass_mark').notNull().default(55),
+  creditPassMark: integer('credit_pass_mark').notNull().default(50),
   distinctionMark: integer('distinction_mark').notNull().default(75),
   createdAt: timestamp('created_at').defaultNow(),
 });

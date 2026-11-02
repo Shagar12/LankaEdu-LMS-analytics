@@ -1,5 +1,5 @@
 /**
- * Supabase-compatible Backend Client Interface for LankaEdu LMS
+ * Supabase-compatible Backend Client Interface for EduCore LMS
  * Connects frontend modules to the PostgreSQL relational backend and syncs with Firebase Firestore.
  */
 

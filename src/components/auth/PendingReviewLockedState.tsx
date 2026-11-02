@@ -46,7 +46,7 @@ export const PendingReviewLockedState: React.FC = () => {
             </div>
             <div>
               <span className="text-base font-bold tracking-tight text-slate-900 dark:text-white leading-tight block">
-                LankaEdu LMS
+                EduCore LMS
               </span>
               <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                 School Registration & Clearance
@@ -171,7 +171,7 @@ export const PendingReviewLockedState: React.FC = () => {
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-3 text-center text-xs text-slate-400">
-        LankaEdu LMS Access Governance · Sri Lankan Ministry of Education Curriculum System
+        EduCore LMS Access Governance · Academic Curriculum System
       </footer>
 
     </div>

@@ -16,7 +16,7 @@ export const FilterToolbar: React.FC = () => {
     currentClassStats,
   } = useLMS();
 
-  // Helper to categorize Sri Lankan educational stages
+  // Helper to categorize educational stages
   const getStageName = (grade: GradeLevel): string => {
     if (grade <= 5) return 'Primary (Grades 1–5)';
     if (grade <= 9) return 'Junior Secondary (Grades 6–9)';

@@ -11,7 +11,7 @@ import {
   SubjectRanking,
 } from '../types/lms';
 
-export const SRI_LANKAN_GRADE_RULES: Record<GradeLetter, GradeDefinition> = {
+export const STANDARD_GRADE_RULES: Record<GradeLetter, GradeDefinition> = {
   A: {
     letter: 'A',
     label: 'Distinction',
@@ -33,20 +33,20 @@ export const SRI_LANKAN_GRADE_RULES: Record<GradeLetter, GradeDefinition> = {
   C: {
     letter: 'C',
     label: 'Credit Pass',
-    min: 55,
+    min: 50,
     max: 64,
     color: '#0284c7', // Sky 600
     badgeClass: 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60',
-    description: '55–64% · Commendable standard and subject understanding',
+    description: '50–64% · Commendable standard and subject understanding',
   },
   S: {
     letter: 'S',
     label: 'Ordinary Pass',
     min: 35,
-    max: 54,
+    max: 49,
     color: '#d97706', // Amber 600
     badgeClass: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60',
-    description: '35–54% · Minimum required pass standard met',
+    description: '35–49% · Minimum required pass standard met',
   },
   W: {
     letter: 'W',
@@ -59,21 +59,23 @@ export const SRI_LANKAN_GRADE_RULES: Record<GradeLetter, GradeDefinition> = {
   },
 };
 
+export const ACADEMIC_GRADE_RULES = STANDARD_GRADE_RULES;
+
 /**
- * Automate grade assignment for individual marks based on Sri Lankan rules:
- * A: 75–100, B: 65–74, C: 55–64, S: 35–54, W: 0–34
+ * Automate grade assignment for individual marks based on standard grading rules:
+ * A: 75–100, B: 65–74, C: 50–64, S: 35–49, W: 0–34
  */
 export function getGradeFromMark(mark: number): GradeDefinition {
   const rounded = Math.round(Math.max(0, Math.min(100, isNaN(mark) ? 0 : mark)));
-  if (rounded >= 75) return SRI_LANKAN_GRADE_RULES.A;
-  if (rounded >= 65) return SRI_LANKAN_GRADE_RULES.B;
-  if (rounded >= 55) return SRI_LANKAN_GRADE_RULES.C;
-  if (rounded >= 35) return SRI_LANKAN_GRADE_RULES.S;
-  return SRI_LANKAN_GRADE_RULES.W;
+  if (rounded >= 75) return STANDARD_GRADE_RULES.A;
+  if (rounded >= 65) return STANDARD_GRADE_RULES.B;
+  if (rounded >= 50) return STANDARD_GRADE_RULES.C;
+  if (rounded >= 35) return STANDARD_GRADE_RULES.S;
+  return STANDARD_GRADE_RULES.W;
 }
 
 /**
- * Standard Sri Lankan Curriculum Subjects by Grade Level
+ * Standard Curriculum Subjects by Grade Level
  */
 export const ALL_CURRICULUM_SUBJECTS: SubjectConfig[] = [
   // Primary (Grades 1-5)
@@ -181,10 +183,34 @@ export function calculateTermRecord(term: TermNumber, marks: Record<string, numb
 }
 
 /**
+ * Re-evaluates student term grade counts and remarks using the current standard grade rules
+ */
+export function recalculateStudentGrades(student: Student): Student {
+  const updated: Student = {
+    ...student,
+    terms: { ...student.terms },
+  };
+
+  ([1, 2, 3] as TermNumber[]).forEach((term) => {
+    const record = updated.terms[term];
+    if (record && record.marks) {
+      const recalculated = calculateTermRecord(term, record.marks);
+      updated.terms[term] = {
+        ...recalculated,
+        rankInClass: record.rankInClass,
+        rankInGrade: record.rankInGrade,
+      };
+    }
+  });
+
+  return updated;
+}
+
+/**
  * Calculates rank in class and rank in grade for each student across all terms
  */
 export function assignRanks(students: Student[]): Student[] {
-  const updatedStudents = JSON.parse(JSON.stringify(students)) as Student[];
+  let updatedStudents = (JSON.parse(JSON.stringify(students)) as Student[]).map(recalculateStudentGrades);
 
   // Terms 1, 2, 3
   const terms: TermNumber[] = [1, 2, 3];
